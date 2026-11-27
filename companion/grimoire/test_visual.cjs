@@ -6,7 +6,7 @@ assert.ok(match,'inline performance script missing');
 const script=match[1];
 const drawLog=[], frames=[];
 const ctx=new Proxy({}, {get:()=>()=>{},set:()=>true});
-const node={getContext:()=>ctx,addEventListener(){},textContent:''};
+const node={getContext:()=>ctx,addEventListener(){},setAttribute(){},textContent:''};
 const sandbox={document:{querySelector:()=>node,querySelectorAll:()=>[],addEventListener(){}},window:{addEventListener(){}},requestAnimationFrame:f=>frames.push(f),GestureQueue:require('./gesture.js'),drawLog};
 vm.createContext(sandbox);vm.runInContext(script,sandbox);
 vm.runInContext('draw=d=>drawLog.push(d);audio={currentTime:1};visuals.push({at:1.05,state:1},{at:1.10,state:2})',sandbox);
