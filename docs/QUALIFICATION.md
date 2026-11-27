@@ -28,7 +28,7 @@ For most instruments, record intended and demonstrated companion capability tier
 - For basic MIDI verify actual mapped messages and note release/panic, without claiming feedback. For enhanced paths verify negotiation/version mismatch, real bidirectional read/write and telemetry freshness/accuracy. Distinguish local/model/demo from observed device state; test malformed/unsupported messages, bounded queues, rate limiting, reconnect generations, no stale replay, timeout and safe fallback.
 - Use the shared CYDaux controller/simulator and exact target build when available. Independently test actual end-to-end routes, display/update latency, memory/CPU, legacy Melodee/SLOOP/Skiff/X0X profile regressions and owner hardware steps. Maintain separate software/simulator, target build, virtual/bridge and physical evidence; unavailable tests are BLOCKED/NOT RUN, not PASS.
 
-QA owns independent receipts and catalogue compatibility matrix; PLATFORM and creative lanes supply FM-1-side witnesses. CYDAUX #9 is a proposed lane, not a current dependency or authorization to modify its repository. Existing emulator-first and physical/rights gates are unchanged.
+QA owns independent receipts and catalogue compatibility matrix; PLATFORM and creative lanes supply FM-1-side witnesses. CYDAUX #9 is active with issue-scoped companion implementation authorization; companion support is still not a prerequisite to standalone delivery. Existing emulator-first and physical/rights gates are unchanged.
 
 ## Owner delivery
 

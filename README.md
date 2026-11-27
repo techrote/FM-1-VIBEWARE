@@ -24,11 +24,11 @@ VIBEWARE develops distinct playable instruments: alternative synthesis engines, 
 | [fm1-emu](https://github.com/joakimeriksson/fm1-emu) | Virtual FM-1 execution and debugging; exact supported execution paths must be independently verified. |
 | [Fune](https://github.com/hugelton/Fune), [FM-1-RE](https://github.com/AL-255/FM-1-RE) | Plugin/firmware architecture and hardware research; inspect actual versions and reuse terms before adoption. |
 
-These projects remain independent. No writes to their repositories are authorized by a VIBEWARE worker. Reference PRs are discovery pointers, not automatically accepted dependencies; pin reviewed source revisions and retain provenance and notices before using code.
+These projects remain independent. Only CYDAUX may write to FM-1-CYDaux in its explicitly authorized issue-scoped role; other reference repositories and lanes remain read-only. Reference PRs are discovery pointers, not automatically accepted dependencies; pin reviewed source revisions and retain provenance and notices before using code.
 
 ## Common performance companion
 
-[FM-1-CYDaux](https://github.com/techrote/FM-1-CYDaux) is the standard optional extended performance interface for the majority of VIBEWARE instruments, across all creative lanes. One extensible companion firmware should provide reusable controls, versioned instrument profiles and instrument-specific visualizations. FM-1 remains playable without the CYD; a documented technical or musical exception is acceptable. Basic MIDI control and richer bidirectional profiles are distinct capability levels, not universal hardware promises. Existing third-party firmware profiles must remain supported. See [architecture](docs/ARCHITECTURE.md), [qualification](docs/QUALIFICATION.md) and [CYDAUX-001 #9](https://github.com/techrote/FM-1-VIBEWARE/issues/9) (proposed seventh worker, not activated).
+[FM-1-CYDaux](https://github.com/techrote/FM-1-CYDaux) is the standard optional extended performance interface for the majority of VIBEWARE instruments, across all creative lanes. One extensible companion firmware should provide reusable controls, versioned instrument profiles and instrument-specific visualizations. FM-1 remains playable without the CYD; a documented technical or musical exception is acceptable. Basic MIDI control and richer bidirectional profiles are distinct capability levels, not universal hardware promises. Existing third-party firmware profiles must remain supported. See [architecture](docs/ARCHITECTURE.md), [qualification](docs/QUALIFICATION.md) and [CYDAUX-001 #9](https://github.com/techrote/FM-1-VIBEWARE/issues/9) (active seventh worker; issue-scoped companion implementation authorized).
 
 ## Delivery model
 

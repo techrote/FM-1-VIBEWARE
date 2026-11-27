@@ -43,7 +43,7 @@ Expose local/model/demo visual state as such; never present it as device telemet
 | Ecophon (#5) | Ecological/agent/resource visualization, environmental interventions, regime/preset and performance controls; distinguish actual from model state. |
 | Grimoire (#6) | Rite selection, gestural XY, procedural visualizations and meaningful audiovisual interaction; optional companion, not a unique CYD runtime. |
 
-PLATFORM owns shared FM-1-side adapters and semantics integration; creative lanes own instrument-specific behaviour and mappings; HYBRID owns audiovisual experiments; proposed CYDAUX #9 owns common firmware, reusable widgets, profiles and transports when authorized; QA independently qualifies end-to-end interoperability. VIBEWARE may contain instrument-side mappings, provisional profile descriptions and simulator fixtures, not duplicated companion firmware. No new CYD wire protocol is frozen by this charter. The emulator-first delivery handoff in #1/#2 remains in force.
+PLATFORM owns shared FM-1-side adapters and semantics integration; creative lanes own instrument-specific behaviour and mappings; HYBRID owns audiovisual experiments; active CYDAUX #9 owns common firmware, reusable widgets, profiles and transports within its issue-scoped authorization; QA independently qualifies end-to-end interoperability. VIBEWARE may contain instrument-side mappings, provisional profile descriptions and simulator fixtures, not duplicated companion firmware. No new CYD wire protocol is frozen by this charter. The emulator-first delivery handoff in #1/#2 remains in force.
 
 ## Collaboration
 

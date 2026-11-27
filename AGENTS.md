@@ -1,6 +1,6 @@
 # VIBEWARE worker protocol
 
-Repository: techrote/FM-1-VIBEWARE only. Read README.md, docs/WORKERS.md, docs/ARCHITECTURE.md and docs/QUALIFICATION.md. The programme is #1. Use linked issues and live PR state rather than assumptions about previous runs.
+Repository: techrote/FM-1-VIBEWARE; CYDAUX #9 additionally has issue-scoped FM-1-CYDaux implementation authorization. Read README.md, docs/WORKERS.md, docs/ARCHITECTURE.md and docs/QUALIFICATION.md. The programme is #1. Use linked issues and live PR state rather than assumptions about previous runs.
 
 ## On every invocation
 
@@ -20,7 +20,7 @@ Repository: techrote/FM-1-VIBEWARE only. Read README.md, docs/WORKERS.md, docs/A
 | CYBER | instruments/ecophon/, later cybernetic instruments | #5 |
 | HYBRID | instruments/grimoire/, companion/grimoire/ (instrument-specific design/fixtures only), later hybrid instruments | #6 |
 | QA | qualification/, catalogue/, integration/release coordination | #7 |
-| CYDAUX (proposed, inactive) | common firmware, widgets, profiles, transports and cross-instrument integration in FM-1-CYDaux once explicitly authorized | #9 |
+| CYDAUX | common firmware, widgets, profiles, transports and cross-instrument integration in FM-1-CYDaux; coordinated VIBEWARE interfaces/fixtures | #9 |
 | DSP (optional) | scoped optimization PRs, agreed with affected owner | #2 or assigned bottleneck |
 | SOUND (optional) | instrument-specific presets/demos and performance refinement, agreed with affected owner | #7 or assigned instrument |
 
@@ -28,10 +28,10 @@ These are ownership boundaries, not yet implemented directories. Common interfac
 
 ## Companion mandate — all lanes
 
-Read #9 and the companion contract in docs/ARCHITECTURE.md. CYDaux compatibility is the normal expectation for most instruments, not a HYBRID-only feature. Creative lanes own musical controls, state, profiles/fixtures and instrument-specific semantics; PLATFORM owns shared FM-1-side control/runtime integration. HYBRID owns experimental audiovisual design, not common companion firmware. The proposed CYDAUX lane owns the shared companion after separate authorization; QA independently qualifies both ends. Do not write to FM-1-CYDaux in existing VIBEWARE lanes. Keep portable engine and emulator-first work moving; use local provisional control interfaces, not incompatible wire protocols or per-instrument firmware forks. State intended capability tier and evidence; document exceptions and never make the CYD mandatory.
+Read #9 and the companion contract in docs/ARCHITECTURE.md. CYDaux compatibility is the normal expectation for most instruments, not a HYBRID-only feature. Creative lanes own musical controls, state, profiles/fixtures and instrument-specific semantics; PLATFORM owns shared FM-1-side control/runtime integration. HYBRID owns experimental audiovisual design, not common companion firmware. The active CYDAUX lane owns the shared companion under owner authorization; QA independently qualifies both ends. Other VIBEWARE lanes must not write to FM-1-CYDaux. Keep portable engine and emulator-first work moving; use local provisional control interfaces, not incompatible wire protocols or per-instrument firmware forks. State intended capability tier and evidence; document exceptions and never make the CYD mandatory.
 
 ## Acceptance and safety
 
 All experimental implementation PRs remain Draft/HOLD until independent qualification and owner review. QA may prepare merge-ready candidates but does not merge without owner authorization. Initial charter and planning files are on main as the bootstrap, not an exception for firmware changes. Prefer original code; record upstream revision, license, notices, changes, distribution obligations and dependency integrity before adoption. Do not copy code from a repository merely because it is accessible. No hardware flash, installable image distribution or physical claims without the board/recovery/format/rights gates in docs/QUALIFICATION.md. Never report listening, execution or timing measurements that did not occur.
 
-The scheduled roster is a configuration recommendation, not evidence of actual active tasks.
+Seven hourly workers were enabled at activation on 27 Nov 2026; inspect live schedules for changes.
