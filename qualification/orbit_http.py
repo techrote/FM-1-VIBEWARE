@@ -14,18 +14,22 @@ import tempfile
 import time
 
 
-def run(source):
+def run(source, original=None):
     with tempfile.TemporaryDirectory(prefix="VIBEWARE QA package ") as directory:
         package = Path(directory)
         core = source / "instruments/grimoire"
         ui = source / "companion/grimoire"
         library = package / ("orbit.dll" if os.name == "nt" else "orbit.so")
         flags = [] if os.name == "nt" else ["-fPIC", "-fsanitize=undefined", "-fno-sanitize-recover=all"]
-        subprocess.run(["gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-shared", *flags,
-                        str(core / "orbit.c"), str(ui / "session.c"), "-o", str(library)], check=True)
+        if original is None:
+            subprocess.run(["gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-shared", *flags,
+                            str(core / "orbit.c"), str(ui / "session.c"), "-o", str(library)], check=True)
+        else:
+            shutil.copy2(original/library.name, library)
         for name in ("host.py", "index.html", "gesture.js", "profile.json"):
-            if (ui / name).exists():
-                shutil.copy2(ui / name, package / name)
+            origin = (original if original is not None else ui) / name
+            if origin.exists():
+                shutil.copy2(origin, package / name)
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]

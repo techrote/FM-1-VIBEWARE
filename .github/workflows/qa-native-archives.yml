@@ -1,7 +1,7 @@
 name: QA original native audition archives
 on:
   pull_request:
-    paths: ['qualification/native_archive.py','.github/workflows/qa-native-archives.yml']
+    paths: ['qualification/native_archive.py','qualification/grimoire_archive.py','.github/workflows/qa-native-archives.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -42,6 +42,16 @@ jobs:
             os: windows-latest
             artifact: 15224337693
             digest: 8dc286554c5747cc0fa380c3bee4ae986e8ce100c3a77575425b22aebf94a1aa
+          - instrument: grimoire
+            ref: e999ac2d3c0556132f92ffd1036617ac87c0118f
+            os: ubuntu-24.04
+            artifact: 15224328963
+            digest: e46765605f9f109f22832c6e134ae20fb6ddd8a1159fbcd5aa28c7d1ebe2ab04
+          - instrument: grimoire
+            ref: e999ac2d3c0556132f92ffd1036617ac87c0118f
+            os: windows-latest
+            artifact: 15224732379
+            digest: a555e3f36dd87f61dd138e040f25c97373f5c5854a72be21ac67839211feb61e
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     defaults:
@@ -75,6 +85,8 @@ jobs:
           python -m py_compile qualification/native_archive.py
           if [ "$INSTRUMENT" = ecophon ]; then
             python qualification/ecophon_archive.py frozen original.zip "$DIGEST" | tee receipts/test.log
+          elif [ "$INSTRUMENT" = grimoire ]; then
+            python qualification/grimoire_archive.py frozen original.zip "$DIGEST" | tee receipts/test.log
           else
             python qualification/native_archive.py "$INSTRUMENT" frozen original.zip "$DIGEST" | tee receipts/test.log
           fi

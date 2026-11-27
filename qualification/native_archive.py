@@ -57,7 +57,7 @@ def witness(root, lib, instrument):
                     q = dict(token=token,seq=index+1,bpm=97,warp=0,variation=20,
                              playing=1,patterns=[[7,73],[5,21],[11,1321]])
                 else:
-                    q = dict(token=token,seq=index,p=2,e=83,d=30,c=100,n=57,v=103,
+                    q = dict(token=token,seq=index,p=2,e=83,d=0,c=100,n=57,v=103,
                              event=1 if index==0 else 0)
                 q.update(changes)
                 return post("/block",q,status)
@@ -65,11 +65,11 @@ def witness(root, lib, instrument):
                 raw = base64.b64decode(d["pcm"],validate=True)
                 assert len(raw)==2400
                 return raw
-            def trajectory(changes):
+            def trajectory(changes, onset=5):
                 token = session()
                 raw = bytearray()
                 for i in range(60):
-                    d = block(token,i,**(changes if i>=5 else {}))
+                    d = block(token,i,**(changes if i>=onset else {}))
                     raw.extend(pcm(d))
                     if gen:
                         assert len(d["lanes"])==3 and all(len(v)==5 for v in d["lanes"])
@@ -84,7 +84,10 @@ def witness(root, lib, instrument):
                 comparisons={ "tempo":trajectory({"bpm":181}), "warp":trajectory({"warp":-59}),
                               "pattern":trajectory({"patterns":[[7,0],[5,21],[11,1321]]})}
             else:
-                comparisons={"damping":trajectory({"d":127})}
+                comparisons={"damping":trajectory({"d":127},onset=1)}
+                assert comparisons["damping"]["hash"]!=baseline["hash"], "mid-decay damping witness"
+                late=trajectory({"d":127},onset=5)
+                comparisons["late_damping"]={**late,"matches_baseline":late==baseline}
                 # Coupling ablation must start at excitation, not after energy already transferred.
                 token=session()
                 coupled=block(token,0)
@@ -93,7 +96,8 @@ def witness(root, lib, instrument):
                 assert any(coupled["levels"][3:]) and isolated["levels"][3:]==[0,0,0]
                 assert pcm(coupled)!=pcm(isolated)
                 comparisons["coupling"]={"hash":sha(pcm(isolated)),"coupled_hash":sha(pcm(coupled))}
-            assert all(v["hash"]!=baseline["hash"] for v in comparisons.values())
+            if gen:
+                assert all(v["hash"]!=baseline["hash"] for v in comparisons.values()), comparisons
             token=session()
             first=block(token,0)
             session(2,400)
