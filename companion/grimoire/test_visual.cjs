@@ -1,7 +1,9 @@
 // Deterministic execution of the actual page's visual timeline and panic functions.
 const assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('node:vm');
 const page=fs.readFileSync(__dirname+'/index.html','utf8');
-const script=page.match(/<script>\n([\s\S]*?)<\/script>/)[1];
+const match=page.match(/<script>\r?\n([\s\S]*?)<\/script>/);
+assert.ok(match,'inline performance script missing');
+const script=match[1];
 const drawLog=[], frames=[];
 const ctx=new Proxy({}, {get:()=>()=>{},set:()=>true});
 const node={getContext:()=>ctx,addEventListener(){},textContent:''};
