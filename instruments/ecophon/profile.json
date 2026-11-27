@@ -5,7 +5,7 @@
   "provisional": true,
   "wire_protocol": null,
   "tiers": {
-    "standalone": "native core verified; FM-1 target pending",
+    "standalone": "native core verified; PLATFORM standalone virtual author PASS at 94a2ffe; independent virtual QA pending",
     "basic_midi": "intended; mapping/transport not verified",
     "enhanced": "intended; local core snapshot only"
   },
@@ -72,7 +72,16 @@
       "gifts",
       "moves",
       "consumed"
-    ]
+    ],
+    "offline_replay": {
+      "schema": "ecophon-offline-replay-v1",
+      "source": "local native core only",
+      "frames_per_snapshot": 2400,
+      "agent_slots": 8,
+      "patches": 4,
+      "transport": false,
+      "producer": "companion_fixture.py"
+    }
   },
   "xy": {
     "x": "fertility",
