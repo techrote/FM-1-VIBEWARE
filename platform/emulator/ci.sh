@@ -109,7 +109,7 @@ python3 "$HERE/elf_xip.py" "$TMP/ecophon.elf" "$TMP/ecophon.xip.bin" | tee "$RES
 run_case "$TMP/ecophon.xip.bin" eco-low p25q80 3
 run_case "$TMP/ecophon.xip.bin" eco-low-repeat p25q80 3
 run_case "$TMP/ecophon.xip.bin" eco-high p25q80 24
-run_case "$TMP/ecophon.xip.bin" eco-scarcity p25q80 3 "350-450:SEL,600-700:N3,900-1000:PLAY,3600-3700:HOME"
+run_case "$TMP/ecophon.xip.bin" eco-scarcity p25q80 3 "350-450:SCL,600-700:N3,900-1000:PLAY,3600-3700:HOME"
 cmp "$RES/eco-low.wav" "$RES/eco-low-repeat.wav"
 for other in eco-high eco-scarcity; do
   if cmp -s "$RES/eco-low.wav" "$RES/$other.wav"; then
