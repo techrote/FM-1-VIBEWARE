@@ -10,7 +10,13 @@ TAP = """(() => {
  const original=AudioContext.prototype.createGain;
  AudioContext.prototype.createGain=function(){
    const node=original.call(this), analyser=this.createAnalyser();
-   analyser.fftSize=2048; node.connect(analyser);
+   analyser.fftSize=2048;
+   const connect=node.connect.bind(node);
+   analyser.connect(this.destination);
+   node.connect=function(dest,...args){
+     if(dest===this.context.destination){connect(analyser,...args);return dest;}
+     return connect(dest,...args);
+   };
    window.ecoTap={context:this, analyser};
    return node;
  };
@@ -43,13 +49,15 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.mouse.up()
             assert 40<=int(page.input_value("#fertility"))<=65
             assert 190<=int(page.input_value("#pressure"))<=215
-            page.wait_for_function("old=>document.querySelector('#stats').textContent!==old",arg=before)
+            page.wait_for_function("old=>document.querySelector('#stats').textContent!==old && +document.querySelector('#stats').dataset.pressure>=190 && +document.querySelector('#stats').dataset.fertility<=65",arg=before)
+            assert page.evaluate("visuals.length<=MAX_VISUALS")
             page.select_option("#preset",index=2)
             assert "next reset" in page.locator("#status").inner_text()
             assert int(page.input_value("#fertility"))<65
             page.click("#start")
             page.wait_for_function("window.ecoRms()>0.001 && document.querySelector('#stats').textContent.includes('Ticks')")
             assert page.input_value("#fertility")=="230"
+            assert page.locator("#stats").get_attribute("data-regime")=="2"
             page.click("#stop")
             page.wait_for_function("window.ecoRms()<0.000001")
             assert page.locator("#stats").inner_text()==""

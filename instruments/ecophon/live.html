@@ -47,7 +47,7 @@ function draw(d){
     g.fillStyle="#d8e8df";g.fillText(String(i+1),cx-4,cy+32);
   });
  }
- $("stats").textContent="Ticks "+d.ticks+" · births "+d.births+" · deaths "+d.deaths+" · gifts "+d.gifts+" · migrations "+d.moves;
+ $("stats").dataset.ticks=String(d.ticks);$("stats").dataset.pressure=String(d.controls[2]);$("stats").dataset.fertility=String(d.controls[0]);$("stats").dataset.regime=String(d.regime);$("stats").textContent="Ticks "+d.ticks+" · regime "+["Mutualism","Scarcity","Seasonal Bloom"][d.regime]+(d.frozen?" (frozen comparator)":"")+" · births "+d.births+" · deaths "+d.deaths+" · gifts "+d.gifts+" · migrations "+d.moves;
 }
 function animate(e){
  if(!live||e!==epoch)return;
@@ -71,7 +71,7 @@ async function pump(e){
  }catch(err){if(e===epoch){stop();$("status").textContent="Stopped: "+err.message}}
 }
 function stop(){
- ++epoch;live=false;clearTimeout(timer);cancelAnimationFrame(raf);visuals.length=0;$("stats").textContent="";$("habitat").getContext("2d").clearRect(0,0,640,360);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
+ ++epoch;live=false;clearTimeout(timer);cancelAnimationFrame(raf);visuals.length=0;$("stats").textContent="";for(const key of ["ticks","pressure","fertility","regime"])delete $("stats").dataset[key];$("habitat").getContext("2d").clearRect(0,0,640,360);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
  const old=generation;generation=0;if(old)post("/panic",{generation:old}).catch(()=>{});
  $("status").textContent="Stopped / locally muted.";
 }
