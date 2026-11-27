@@ -1,0 +1,33 @@
+name: CYDaux actual USB target endpoint
+on:
+  workflow_dispatch:
+    inputs:
+      cydaux_ref:
+        description: Exact FM-1-CYDaux companion platform source SHA
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - 'platform/companion/**'
+      - '.github/workflows/cydaux-endpoint.yml'
+permissions:
+  contents: read
+jobs:
+  target-usb:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CYDAUX_REF: ${{ inputs.cydaux_ref || '8103a3a8ef8b3a59d36851e69a0da1d01eab46d4' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Independent C/C++ contract and actual pi32v2 USB emulator qualification
+        run: bash platform/companion/ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cydaux-usb-target-evidence
+          if-no-files-found: warn
+          path: companion-results/
+          retention-days: 30
