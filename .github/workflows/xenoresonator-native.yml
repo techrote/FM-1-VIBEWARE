@@ -36,7 +36,9 @@ jobs:
       - name: Actual-core material passage and causal coupling comparison
         run: |
           python material_passage.py ./live.dll 'material passage'
-          cp material_passage.py 'material passage/'
+          python companion_replay.py 'material passage' 'material passage/companion-replay.json'
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('material passage/companion-replay.json').read_bytes()).hexdigest() == '9533678e9ec8e5fcbc46c868854365672560cc742ffe16a3550906c1c4b0c5dd'"
+          cp material_passage.py companion_replay.py 'material passage/'
           git rev-parse HEAD > 'material passage/SOURCE-REVISION.txt'
       - uses: actions/upload-artifact@v4
         with:
