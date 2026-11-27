@@ -13,61 +13,61 @@ jobs:
       matrix:
         include:
           - instrument: ecophon
-            ref: 65d8ca6e977218b491643d58f9ab386db6149632
+            ref: 228784f3df8f3c18701ab484b60cd1a607d511c9
             os: ubuntu-24.04
-            artifact: 15233232444
-            digest: 2cf29ce25df515af4d601167616011af9a31d48f19e3a0ee9a5afc980d4d6ca0
+            artifact: 15237687217
+            digest: a465cb9c762f4f2d56bae5cc8252192e5954b8a1f196b1563dc6ea62398b0168
             score: 0
             score_digest: none
           - instrument: ecophon
-            ref: 65d8ca6e977218b491643d58f9ab386db6149632
+            ref: 228784f3df8f3c18701ab484b60cd1a607d511c9
             os: windows-latest
-            artifact: 15233670382
-            digest: c3f15738c11a40d5b226a50c37401e7e6abe523874502cefa3b6141040e07dca
+            artifact: 15238145831
+            digest: ef28aaa1a06f375b5eacb686268dceecfed36974f99b82773f684bd2687952f0
             score: 0
             score_digest: none
           - instrument: grimoire
-            ref: f7da12d3675489083f5debd9bee65ed4da0cbf81
+            ref: 63ecfd1b3ee08988555397bd0673aec91a4cb4e7
             os: ubuntu-24.04
-            artifact: 15233416349
-            digest: beefb1abb12d5ecd33148ab02122ee9d5723a4d055d1c9aa8ee6d0d534ba756f
-            score: 15233411224
-            score_digest: 4d1ae3a42b7c084d72ea5cd7f2d18c32cdb0981b2b0b5b9e391cf07c2e9d20fb
+            artifact: 15238851162
+            digest: 1a761adbed8f321c1c0135f1c7a0857c4b47488df3fb610558039f7ac1e8c2d9
+            score: 15238796164
+            score_digest: 94325b23ae332fb4bd3e41166e852c84ffacf8a0f35ef3b83605c7647c25a424
           - instrument: grimoire
-            ref: f7da12d3675489083f5debd9bee65ed4da0cbf81
+            ref: 63ecfd1b3ee08988555397bd0673aec91a4cb4e7
             os: windows-latest
-            artifact: 15232479834
-            digest: 4f9a8ba47c622ff45efc600e169c5d0f222fbe86b256859e0ea92cdffcbdecf0
-            score: 15232489944
-            score_digest: ae36f4f217d0502fdefb0d3044d4ad02e030ccd84f81fa59ab11fa16a6c49c57
+            artifact: 15237793431
+            digest: 7c25f0f696645f7442adcc4bc74a2be8901c1463a4a6dcd32c02ef3e5982c3ea
+            score: 15237828243
+            score_digest: 36bfdd02083aade0dffe817e8507171e07657ca57f6d4323ab38bb0469b7d899
           - instrument: xenoresonator
-            ref: e5ecfdb4277d3b5b808c886517f4ed306224bd1f
+            ref: 5804ebb694fe9624f5d54edd51f54fad4c2332f8
             os: ubuntu-24.04
-            artifact: 15231594009
-            digest: 6c96684bcba000085d501cca64cf09bd5f0941b3530dd65e75108ec94f1356a1
-            score: 15231678735
-            score_digest: 00b526142af6a64558150ed459c5295096b1052c756d8736bbbb755442c78ab5
+            artifact: 15236948633
+            digest: 519935591d8cda51ff098e59acf41eb5442a3b0e0bdb0ad0fc90bb3b37a48a11
+            score: 15237083456
+            score_digest: 24a9ad68e70c1e13bf3703d5617ffef542737517cb40ce189891189458b02357
           - instrument: xenoresonator
-            ref: e5ecfdb4277d3b5b808c886517f4ed306224bd1f
+            ref: 5804ebb694fe9624f5d54edd51f54fad4c2332f8
             os: windows-latest
-            artifact: 15232785267
-            digest: 2d316b5f1889b22639cf8a3805a09686a1ad71662e83ae44099c6cd5337dc6c4
-            score: 15231368825
-            score_digest: 37f6c6d75bb2d136244621267116436510b2c4c4c1c04ae24d61547bb8390e47
+            artifact: 15237362337
+            digest: 4ddd84de0436ba9b9296bfbbd512a5330a18dafc0052124a666067d72bf2736f
+            score: 15237197580
+            score_digest: a0952ea3950d3087b6d4201cd8af98fdb4650dcb739d3edabd96c168ab5d64cd
           - instrument: chronomorph
-            ref: 110f857e54fa3c7730be53911a0a0fad0ce3c3a3
+            ref: 7fa9a16b55b321a1a8b46e174ed15e927aeaece6
             os: ubuntu-24.04
-            artifact: 15231854633
-            digest: 7588299e4afb6f5e95ec9239b43279d504346cd05a31cd8990e614849b344b8b
-            score: 15232941177
-            score_digest: 64b4632fb7dfe8c5da285eff469559bf69c9ec5b4abb11248c275a0994e20442
+            artifact: 15236308947
+            digest: 31de5262e932283f28fea086f252c96876dc98173599e1eeb3552ee611199a9f
+            score: 15237192841
+            score_digest: 35dc71a5b2e0cd2c0b1b620749d62b044ec8340a0da04b3ac73e1da3e015fb0f
           - instrument: chronomorph
-            ref: 110f857e54fa3c7730be53911a0a0fad0ce3c3a3
+            ref: 7fa9a16b55b321a1a8b46e174ed15e927aeaece6
             os: windows-latest
-            artifact: 15232816482
-            digest: c346a0eefeb2be22fdd03f0b6e07fdd1147e689e1f983423a3d593b29f915176
-            score: 15232701672
-            score_digest: b9b2d9ad4e348e6dd857cd4625d7feda1636f5727b7681a8198073645e4f53da
+            artifact: 15237532785
+            digest: 8dc9349bf5bdd8f8b27e6579fc9227257e4fae72f29302b0cd8fbb11724bf3f3
+            score: 15237164344
+            score_digest: 355d346a209bc51d7bdd2dd1f92536d55f616b0d2208a326860c48ba4ab500fe
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     defaults:
