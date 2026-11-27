@@ -3,8 +3,8 @@
 void os_init(OrbitSession *s){memset(s,0,sizeof(*s));orbit_reset(&s->core,0);}
 void os_disconnect(OrbitSession *s){s->connected=0;orbit_panic(&s->core);}
 uint32_t os_connect(OrbitSession *s,unsigned version){
-    os_disconnect(s);
     if(version!=ORBIT_VERSION || s->generation==UINT32_MAX)return 0;
+    os_disconnect(s);
     s->generation++;s->connected=1;return s->generation;
 }
 int os_event(OrbitSession *s,uint32_t generation,unsigned op,unsigned a,unsigned b){

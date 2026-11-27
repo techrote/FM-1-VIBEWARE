@@ -27,9 +27,11 @@ jobs:
           ./out/test out/amber.wav out/iron.wav out/abyss.wav
           gcc -std=c11 -Wall -Wextra -Werror -O2 -shared $flags instruments/grimoire/orbit.c companion/grimoire/session.c -o out/orbit.$ext
           python companion/grimoire/smoke.py out/orbit.$ext
+          node companion/grimoire/test_gesture.cjs
           python -c "import hashlib,pathlib; p=pathlib.Path('out'); [(print(f.name,hashlib.sha256(f.read_bytes()).hexdigest())) for f in sorted(p.glob('*.wav'))]"
-          cp companion/grimoire/{host.py,index.html,smoke.py} out/
+          cp companion/grimoire/{host.py,index.html,smoke.py,gesture.js,profile.json,test_gesture.cjs} out/
           python out/smoke.py out/orbit.$ext
+          node out/test_gesture.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: grimoire-${{ matrix.os }}

@@ -1,15 +1,38 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Grimoire · Orbit Gate</title>
 <style>body{background:#131321;color:#e4d9be;font:16px system-ui;max-width:540px;margin:24px auto;padding:12px}canvas{width:100%;max-width:480px;touch-action:none;border:1px solid #9b8060}button{margin:5px;padding:10px;background:#302938;color:inherit;border:1px solid #9b8060}button:disabled{opacity:.4}</style>
 <h1>Orbit Gate</h1><p>Grimoire / native-core virtual companion. Drag to sound; X selects pitch, Y bends the satellites and opens the filter.</p><button id="start">Start audio / connect</button><button id="panic">Panic</button><div id="presets"><button data-p="0">Amber</button><button data-p="1">Iron</button><button data-p="2">Abyss</button></div><canvas id="pad" width="320" height="240"></canvas><p id="state">Disconnected</p>
+<script src="/gesture.js"></script>
 <script>
-const pad=document.querySelector('#pad'),ctx=pad.getContext('2d'),status=document.querySelector('#state');let audio=null,g=0,next=0,busy=false,epoch=0,queue=Promise.resolve(),sources=new Set(),timer=null,held=false;
-async function request(kind,data={}){const r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,generation:g,...data})});if(!r.ok)throw Error('session rejected');return r.json()}
-function event(op,a=0,b=0){const generation=g;queue=queue.catch(()=>{}).then(()=>{if(g&&generation===g)return request('event',{op,a,b})});return queue}
+const pad=document.querySelector('#pad'),ctx=pad.getContext('2d'),status=document.querySelector('#state'),start=document.querySelector('#start');
+let audio=null,g=0,next=0,epoch=0,timer=null,pointer=null,connecting=false,inFlight=null;
+const queue=new GestureQueue(),sources=new Set();
+async function request(kind,data={},generation=g){
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),900);
+  try{const r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,generation,...data}),signal:controller.signal});
+    if(!r.ok)throw Error('session rejected');return await r.json();
+  }finally{clearTimeout(timeout)}
+}
 function cancelAudio(){epoch++;for(const s of sources){try{s.stop()}catch{}}sources.clear();next=audio?audio.currentTime:0}
-function stop(){held=false;cancelAudio();event(4).catch(()=>{});}
-function draw(d){ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);const colors=['#ffc67a','#8ecfc7','#a58bd6'];d.phase.forEach((v,i)=>{const a=v/65536*2*Math.PI,r=38+i*25;ctx.strokeStyle=colors[i];ctx.beginPath();ctx.arc(160,120,r,0,Math.PI*2);ctx.stroke();ctx.fillStyle=colors[i];ctx.beginPath();ctx.arc(160+Math.cos(a)*r,120+Math.sin(a)*r,3+d.energy/5000,0,Math.PI*2);ctx.fill()});ctx.strokeStyle='#fff';ctx.beginPath();ctx.arc(d.x/127*319,(127-d.y)/127*239,6,0,Math.PI*2);ctx.stroke();status.textContent='Native PCM · energy '+d.energy+' · '+(d.gate?'gate':'release')}
-async function pump(){if(!audio||!g||busy||next-audio.currentTime>.12)return;busy=true;const e=epoch;try{await queue;const d=await request('audio');if(e!==epoch)return;draw(d);const bytes=Uint8Array.from(atob(d.pcm),c=>c.charCodeAt(0)),dv=new DataView(bytes.buffer),b=audio.createBuffer(1,bytes.length/2,d.rate),f=b.getChannelData(0);for(let i=0;i<f.length;i++)f[i]=dv.getInt16(i*2,true)/32768;const s=audio.createBufferSource();s.buffer=b;s.connect(audio.destination);sources.add(s);s.onended=()=>sources.delete(s);next=Math.max(next,audio.currentTime+.015);s.start(next);next+=b.duration}catch(err){cancelAudio();g=0;status.textContent='Disconnected: '+err.message;clearInterval(timer);timer=null}finally{busy=false}}
-document.querySelector('#start').onclick=async()=>{stop();if(!audio)audio=new AudioContext();await audio.resume();await queue.catch(()=>{});const d=await request('connect',{version:1});g=d.generation;next=audio.currentTime;clearInterval(timer);timer=setInterval(pump,20)};
-function xy(e){const r=pad.getBoundingClientRect(),x=Math.max(0,Math.min(127,Math.round((e.clientX-r.left)/r.width*127))),y=Math.max(0,Math.min(127,Math.round((1-(e.clientY-r.top)/r.height)*127)));event(1,x,y).catch(()=>{})}
-pad.onpointerdown=e=>{if(!g)return;held=true;pad.setPointerCapture(e.pointerId);xy(e);event(2,1).catch(()=>{})};let last=0;pad.onpointermove=e=>{if(held&&performance.now()-last>45){last=performance.now();xy(e)}};pad.onpointerup=pad.onpointercancel=()=>{held=false;event(2,0).catch(()=>{})};window.addEventListener('blur',stop);document.querySelector('#panic').onclick=stop;document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{stop();event(3,Number(b.dataset.p)).catch(()=>{})});ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);
+function stop(){pointer=null;cancelAudio();if(g){queue.panic();pump()}}
+function event(op,a=0,b=0){if(!g||connecting)return;if(!queue.push(op,a,b)){pointer=null;cancelAudio();status.textContent='Gesture overload: panic queued'}pump()}
+function draw(d){ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);const colors=['#ffc67a','#8ecfc7','#a58bd6'];d.phase.forEach((v,i)=>{const a=v/65536*2*Math.PI,r=38+i*25;ctx.strokeStyle=colors[i];ctx.beginPath();ctx.arc(160,120,r,0,Math.PI*2);ctx.stroke();ctx.fillStyle=colors[i];ctx.beginPath();ctx.arc(160+Math.cos(a)*r,120+Math.sin(a)*r,3+d.energy/5000,0,Math.PI*2);ctx.fill()});ctx.strokeStyle='#fff';ctx.beginPath();ctx.arc(d.x/127*319,(127-d.y)/127*239,6,0,Math.PI*2);ctx.stroke();status.textContent='Local native core (not device telemetry) · '+['Amber','Iron','Abyss'][d.preset]+' · energy '+d.energy+' · '+(d.gate?'gate':'release')}
+function pump(){if(!audio||!g||connecting||inFlight)return;const item=queue.shift();if(!item&&next-audio.currentTime>.12)return;const e=epoch,gen=g;
+  inFlight=(async()=>{try{
+    if(item){await request('event',{op:item[0],a:item[1],b:item[2]},gen);return}
+    const d=await request('audio',{},gen);if(e!==epoch||gen!==g)return;draw(d);
+    const bytes=Uint8Array.from(atob(d.pcm),c=>c.charCodeAt(0)),dv=new DataView(bytes.buffer),b=audio.createBuffer(1,bytes.length/2,d.rate),f=b.getChannelData(0);for(let i=0;i<f.length;i++)f[i]=dv.getInt16(i*2,true)/32768;const s=audio.createBufferSource();s.buffer=b;s.connect(audio.destination);sources.add(s);s.onended=()=>sources.delete(s);next=Math.max(next,audio.currentTime+.015);s.start(next);next+=b.duration;
+  }catch(err){cancelAudio();g=0;pointer=null;queue.clear();status.textContent='Disconnected: '+err.message;clearInterval(timer);timer=null}})().finally(()=>{inFlight=null;if(queue.length)pump()});
+}
+start.onclick=async()=>{if(connecting)return;connecting=true;start.disabled=true;pointer=null;cancelAudio();queue.clear();clearInterval(timer);timer=null;
+  try{if(inFlight)await inFlight;g=0;if(!audio)audio=new AudioContext();await audio.resume();const d=await request('connect',{version:1},0);g=d.generation;next=audio.currentTime;status.textContent='Connected to local core';timer=setInterval(pump,20)}
+  catch(err){g=0;status.textContent='Connection failed: '+err.message}
+  finally{connecting=false;start.disabled=false;pump()}
+};
+function xy(e){const r=pad.getBoundingClientRect(),x=Math.max(0,Math.min(127,Math.round((e.clientX-r.left)/r.width*127))),y=Math.max(0,Math.min(127,Math.round((1-(e.clientY-r.top)/r.height)*127)));event(1,x,y)}
+let last=0;pad.onpointerdown=e=>{if(!g||connecting||pointer!==null)return;pointer=e.pointerId;pad.setPointerCapture(e.pointerId);xy(e);if(pointer!==null)event(2,1)};
+pad.onpointermove=e=>{if(pointer===e.pointerId&&performance.now()-last>45){last=performance.now();xy(e)}};
+pad.onpointerup=pad.onpointercancel=pad.onlostpointercapture=e=>{if(pointer!==e.pointerId)return;pointer=null;event(2,0)};
+window.addEventListener('blur',stop);document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});document.querySelector('#panic').onclick=stop;
+document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{stop();event(3,Number(b.dataset.p))});
+ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);
 </script>

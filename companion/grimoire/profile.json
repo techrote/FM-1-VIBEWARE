@@ -1,0 +1,107 @@
+{
+  "instrument_id": "grimoire.orbit-gate",
+  "profile_version": 1,
+  "engine_rate_hz": 24000,
+  "scope": "provisional instrument-local semantic fixture; not a device wire contract",
+  "standalone": {
+    "core": "Orbit",
+    "required_companion": false,
+    "target_status": "not run"
+  },
+  "companion": {
+    "intended_tier": "enhanced where verified; basic MIDI fallback",
+    "verified_tier": "local native core fixture only",
+    "physical_transport": "unknown",
+    "midi_mapping": "proposed only; not verified",
+    "state_source": "local native core, not device telemetry"
+  },
+  "parameters": [
+    {
+      "id": "pitch_x",
+      "type": "integer",
+      "min": 0,
+      "max": 127,
+      "default": 48,
+      "access": "read_write",
+      "unit": "gesture coordinate",
+      "mapping": "floor(x * 23 / 127), 24 chromatic pitches"
+    },
+    {
+      "id": "material_y",
+      "type": "integer",
+      "min": 0,
+      "max": 127,
+      "default": 70,
+      "access": "read_write",
+      "unit": "gesture coordinate",
+      "mapping": "phase perturbation and low-pass coefficient"
+    },
+    {
+      "id": "material",
+      "type": "enum",
+      "values": [
+        "Amber",
+        "Iron",
+        "Abyss"
+      ],
+      "default": 0,
+      "access": "read_write",
+      "on_change": "reset core and release gate"
+    }
+  ],
+  "events": [
+    {
+      "id": "gesture_xy",
+      "parameters": [
+        "pitch_x",
+        "material_y"
+      ]
+    },
+    {
+      "id": "gate",
+      "values": [
+        0,
+        1
+      ],
+      "release_required": true
+    },
+    {
+      "id": "panic",
+      "effect": "immediate mute"
+    }
+  ],
+  "telemetry": [
+    {
+      "id": "phase",
+      "type": "uint16[3]",
+      "source": "local native core"
+    },
+    {
+      "id": "energy",
+      "type": "integer",
+      "source": "local native core"
+    },
+    {
+      "id": "env",
+      "type": "integer",
+      "source": "local native core"
+    },
+    {
+      "id": "gate",
+      "type": "boolean",
+      "source": "local native core"
+    }
+  ],
+  "unsupported": [
+    "device discovery",
+    "device telemetry",
+    "verified MIDI",
+    "verified BLE/Wi-Fi/serial",
+    "clock/transport"
+  ],
+  "fixture": {
+    "max_pending_events": 16,
+    "idle_lease_seconds": 1.5,
+    "overflow": "discard pending events and panic"
+  }
+}
