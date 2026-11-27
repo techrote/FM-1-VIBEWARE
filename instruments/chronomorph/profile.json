@@ -3,7 +3,7 @@
   "version": 1,
   "status": "provisional local semantics; not a wire protocol",
   "intendedTier": "basic MIDI clock/controls where verified; enhanced pattern editing and clock telemetry where supported",
-  "verifiedTier": "native standalone core and persistent local fixture, author browser CI and independent native package qualified at predecessor be57d9f; new edits pending exact CI",
+  "verifiedTier": "native standalone core and local fixture; native/browser CI 46063499182 PASS; independent frozen FM-1 virtual target CI 46066974168 PASS; no companion route qualified",
   "sampleRate": 24000,
   "parameters": [
     {
@@ -73,7 +73,8 @@
       "clock",
       "playing"
     ],
-    "fixture": "offline final state or bounded local live block-end step/ticks/hits/cycle/clock snapshot; no device feedback"
+    "fixture": "offline final state or bounded local live block-end step/ticks/hits/cycle/clock snapshot; no device feedback",
+    "replay": "Tidal Interlock offline fixture v1: 20 Hz block-end local state and PCM CRC32, two matched arms; companion_replay.py"
   },
   "unsupported": [
     "verified MIDI transport",
