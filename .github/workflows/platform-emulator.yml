@@ -1,0 +1,26 @@
+name: PLATFORM first virtual target
+on:
+  pull_request:
+    paths:
+      - 'platform/emulator/**'
+      - '.github/workflows/platform-emulator.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-virtual-target:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build pinned reference and actual Orbit Gate target; run strict PCM cases
+        run: bash platform/emulator/ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: platform-virtual-evidence
+          if-no-files-found: warn
+          path: platform-results/
+          retention-days: 14
