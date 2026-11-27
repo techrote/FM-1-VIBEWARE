@@ -145,7 +145,7 @@ def panel_digest(path):
     data = path.read_bytes()
     require(data.startswith(PANEL_HEADER), 'wrong panel PPM header')
     pixels = data[len(PANEL_HEADER):]
-    require(min(pixels) != max(pixels), 'blank panel image')
+    require(pixels != pixels[:3] * (1280 * 820), 'blank panel image')
     return hashlib.sha256(data).hexdigest()
 
 
@@ -275,8 +275,8 @@ class Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='VIBEWARE panel fixture ') as d:
             p = Path(d); film = p / 'panel frames'; film.mkdir()
             out = p / 'evidence'; out.mkdir()
-            data = PANEL_HEADER + bytes([0, 32, 255]) * (1280 * 820)
-            changed = PANEL_HEADER + bytes([32, 0, 255]) * (1280 * 820)
+            data = PANEL_HEADER + bytes([0, 32, 255, 255, 32, 0]) * (1280 * 820 // 2)
+            changed = PANEL_HEADER + bytes([32, 0, 255, 255, 0, 32]) * (1280 * 820 // 2)
             for i in range(5):
                 (film / f'{i:06}.ppm').write_bytes(data if i < 2 else changed)
             (p / 'final.ppm').write_bytes(data)
@@ -284,7 +284,8 @@ class Tests(unittest.TestCase):
             self.assertEqual((out / 'test-panel-active.ppm').read_bytes(), changed)
             self.assertEqual((out / 'test-panel-muted.ppm').read_bytes(), data)
             self.assertEqual(len(json.loads((out / 'test-panel.json').read_text())['frames']), 5)
-            for bad in (b'', b'P5' + data[2:], PANEL_HEADER + bytes(PANEL_BYTES)):
+            for bad in (b'', b'P5' + data[2:], PANEL_HEADER + bytes(PANEL_BYTES),
+                        PANEL_HEADER + bytes([1, 2, 3]) * (1280 * 820)):
                 (p / 'final.ppm').write_bytes(bad)
                 with self.assertRaises(ValueError): panel_receipt(p, out, 'test')
             (p / 'final.ppm').write_bytes(data)
