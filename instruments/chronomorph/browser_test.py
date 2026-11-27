@@ -87,6 +87,31 @@ with Server(("127.0.0.1",0),Handler) as s:
             assert all(y[1]>=x[1] for x,y in zip(a.json()["lanes"],b.json()["lanes"]))
             assert page.locator("#sceneStatus").inner_text().startswith("Scene 2 recalled")
             assert page.locator("#lane0 button.on").count()==3
+            # Export, alter and restore a scene bank while the real engine runs.
+            page.get_by_role("button",name="Export scenes",exact=True).click()
+            bank=page.locator("#sceneExchange").input_value()
+            import json
+            decoded=json.loads(bank)
+            assert decoded["version"]==1 and len(decoded["slots"])==4
+            assert decoded["slots"][2:]==[None,None]
+            page.get_by_role("button",name="Save Scene 1",exact=True).click()
+            page.locator("#sceneExchange").fill(bank.replace('"version": 1','"version": 2'))
+            page.get_by_role("button",name="Import scenes",exact=True).click()
+            assert page.locator("#sceneStatus").inner_text().startswith("Import rejected")
+            page.get_by_role("button",name="Export scenes",exact=True).click()
+            altered=json.loads(page.locator("#sceneExchange").input_value())
+            assert altered["slots"][0]==altered["slots"][1]
+            page.locator("#sceneExchange").fill(bank)
+            with page.expect_response(scene_response(180,-48,64,82)) as imported:
+                page.get_by_role("button",name="Import scenes",exact=True).click()
+            assert page.locator("#sceneStatus").inner_text().startswith("Scene bank imported")
+            assert page.get_by_role("button",name="Recall Scene 3",exact=True).is_disabled()
+            with page.expect_response(scene_response(112,24,12,41)) as restored:
+                page.get_by_role("button",name="Recall Scene 1",exact=True).click()
+            c,d=imported.value,restored.value
+            assert c.request.post_data_json["token"]==d.request.post_data_json["token"]==a.request.post_data_json["token"]
+            assert d.json()["seq"]>c.json()["seq"]
+            assert all(y[1]>=x[1] for x,y in zip(c.json()["lanes"],d.json()["lanes"]))
             page.get_by_role("button",name="Pause",exact=True).click()
             with page.expect_response(lambda r:r.url.endswith("/block") and r.status==200 and
                     r.request.post_data_json["playing"]==0 and r.request.post_data_json["bpm"]==112):

@@ -3,7 +3,7 @@
 <h1>Chronomorph — live clocks</h1><p>Actual local native engine. Edit patterns and warp while playing. Clock markers are sampled local state, not device telemetry.</p>
 <label>Composition <select id="preset"><option>Glass Lattice</option><option>Broken Meridian</option><option>Slow Eclipse</option></select></label>
 <label>BPM <input id="bpm" type="number" min="40" max="220"></label><label>Warp <input id="warp" type="number" min="-60" max="60"></label><label>Variation <input id="variation" type="number" min="0" max="100" value="12"></label><label>Seed <input id="seed" type="number" min="1" max="2147483647" value="17"></label>
-<div id="lanes"></div><fieldset><legend>Performance scenes</legend><p>Capture tempo, warp, variation and all three patterns; recall without restarting clocks. Four in-memory slots, cleared on reload. Seed, preset and transport are not recalled.</p><div id="scenes"></div><output id="sceneStatus" aria-live="polite">No scene saved</output></fieldset><button id="start">Start / resume</button> <button id="pause">Pause</button> <button id="reset">Reset composition</button> <button id="panic">Panic / disconnect</button><output id="status" aria-live="polite">Stopped</output>
+<div id="lanes"></div><fieldset><legend>Performance scenes</legend><p>Capture tempo, warp, variation and all three patterns; recall without restarting clocks. Four in-memory slots; export/import scene JSON to keep or share them. Seed, preset and transport are not recalled.</p><div id="scenes"></div><label for="sceneExchange">Scene bank JSON</label><textarea id="sceneExchange" maxlength="2048" rows="4" style="display:block;width:95%;font:12px monospace" spellcheck="false"></textarea><button id="exportScenes" type="button">Export scenes</button> <button id="importScenes" type="button">Import scenes</button><output id="sceneStatus" aria-live="polite">No scene saved</output></fieldset><button id="start">Start / resume</button> <button id="pause">Pause</button> <button id="reset">Reset composition</button> <button id="panic">Panic / disconnect</button><output id="status" aria-live="polite">Stopped</output>
 <script>
 const $=id=>document.getElementById(id), presets=[[112,24,[7,5,11],[73,21,1321]],[142,-32,[5,9,7],[21,297,85]],[84,48,[9,7,13],[293,73,4693]]];
 let lens=[],masks=[],token=null,seq=0,gen=0,playEpoch=0,playing=0,ctx=null,next=0,sources=new Set(),visual=[],timer=null,inflight=null;
@@ -17,27 +17,46 @@ f.append(' Hits ',density,' ',action('Spread hits',()=>{const k=Math.max(0,Math.
 function load(){const p=presets[$('preset').selectedIndex];$('bpm').value=p[0];$('warp').value=p[1];lens=p[2].slice();masks=p[3].slice();grid()}
 load();
 function makeSceneBank(){
-  const slots=Array(4).fill(null);
+  let slots=Array(4).fill(null);
+  const format="chronomorph-scenes",version=1,maxChars=2048;
   function copy(s){return {bpm:s.bpm,warp:s.warp,variation:s.variation,patterns:s.patterns.map(p=>p.slice())}}
+  function keys(s,expected){return s!==null&&typeof s==="object"&&!Array.isArray(s)&&Object.keys(s).sort().join(",")===expected}
   function valid(s){
     const int=(v,a,b)=>Number.isInteger(v)&&v>=a&&v<=b;
-    return s&&int(s.bpm,40,220)&&int(s.warp,-60,60)&&int(s.variation,0,100)&&Array.isArray(s.patterns)&&s.patterns.length===3&&s.patterns.every(p=>Array.isArray(p)&&p.length===2&&int(p[0],1,16)&&int(p[1],0,(1<<p[0])-1));
+    return keys(s,"bpm,patterns,variation,warp")&&int(s.bpm,40,220)&&int(s.warp,-60,60)&&int(s.variation,0,100)&&Array.isArray(s.patterns)&&s.patterns.length===3&&s.patterns.every(p=>Array.isArray(p)&&p.length===2&&int(p[0],1,16)&&int(p[1],0,(1<<p[0])-1));
   }
   function index(i){if(!Number.isInteger(i)||i<0||i>=4)throw new RangeError("scene slot")}
   return {
     save(i,s){index(i);if(!valid(s))throw new RangeError("scene controls");slots[i]=copy(s)},
-    recall(i){index(i);return slots[i]===null?null:copy(slots[i])}
+    recall(i){index(i);return slots[i]===null?null:copy(slots[i])},
+    exportText(){return JSON.stringify({format,version,slots},null,2)},
+    importText(raw){
+      if(typeof raw!=="string"||raw.length>maxChars)throw new RangeError("scene bank size");
+      const bank=JSON.parse(raw);
+      if(!keys(bank,"format,slots,version")||bank.format!==format||bank.version!==version||
+         !Array.isArray(bank.slots)||bank.slots.length!==4||
+         !bank.slots.every(s=>s===null||valid(s)))throw new RangeError("scene bank format or controls");
+      slots=bank.slots.map(s=>s===null?null:copy(s));
+    }
   }
 }
-const sceneBank=makeSceneBank();
+const sceneBank=makeSceneBank(),sceneRecallButtons=[];
 function sceneControls(){return {bpm:clamp('bpm',40,220),warp:clamp('warp',-60,60),variation:clamp('variation',0,100),patterns:lens.map((n,i)=>[n,masks[i]])}}
 for(let i=0;i<4;i++){
   const save=document.createElement('button'),recall=document.createElement('button'),name='Scene '+(i+1);
   save.type=recall.type='button';save.textContent='Save '+name;recall.textContent='Recall '+name;recall.disabled=true;
   save.onclick=()=>{sceneBank.save(i,sceneControls());recall.disabled=false;$('sceneStatus').textContent=name+' saved'};
   recall.onclick=()=>{const s=sceneBank.recall(i);if(!s)return;$('bpm').value=s.bpm;$('warp').value=s.warp;$('variation').value=s.variation;lens=s.patterns.map(p=>p[0]);masks=s.patterns.map(p=>p[1]);grid();$('sceneStatus').textContent=name+' recalled (clock and transport unchanged)'};
-  $('scenes').append(save,recall,document.createTextNode(' '));
+  sceneRecallButtons.push(recall);$('scenes').append(save,recall,document.createTextNode(' '));
 }
+$('exportScenes').onclick=()=>{$('sceneExchange').value=sceneBank.exportText();$('sceneStatus').textContent='Scene bank exported — copy the JSON to keep it'};
+$('importScenes').onclick=()=>{
+  try{
+    sceneBank.importText($('sceneExchange').value);
+    sceneRecallButtons.forEach((b,i)=>{b.disabled=sceneBank.recall(i)===null});
+    $('sceneStatus').textContent='Scene bank imported — recall a slot to apply it';
+  }catch(e){$('sceneStatus').textContent='Import rejected — existing scenes unchanged'}
+};
 async function request(path,q,signal){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q),signal});if(!r.ok)throw Error('Session rejected: '+r.status);return r.json()}
 function clearAudio(){for(const s of sources){try{s.stop()}catch{}}sources.clear();visual=[];next=ctx?ctx.currentTime:0;for(let i=0;i<3;i++)for(const b of $('lane'+i).children)b.classList.remove('current')}
 function disconnect(){gen++;playEpoch++;playing=0;clearTimeout(timer);if(inflight)inflight.abort();inflight=null;clearAudio();const old=token;token=null;if(old)request('/panic',{token:old}).catch(()=>{});$('status').textContent='Stopped / disconnected'}
