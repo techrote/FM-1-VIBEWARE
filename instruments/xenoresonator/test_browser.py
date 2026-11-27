@@ -1,4 +1,5 @@
 """Actual Chromium Web Audio graph, rendered modal state and gesture ownership."""
+import base64
 import pathlib
 import subprocess
 import sys
@@ -112,6 +113,41 @@ try:
         assert page.evaluate("heldKey===null && pointer===null")
         assert [q['event'] for q in requests[start:] if q['event']] == [1,2,1,2]
         assert page.evaluate("visuals.length<=8 && events.length<=8")
+
+        # Chromatic keyboard: actual PCM for all 13 notes plus octave bounds.
+        # Keyboard remains monophonic and shares pointer ownership and panic.
+        def pitched(key, note):
+            with page.expect_response(lambda r:r.url==url+'/block' and
+                    r.request.method=='POST' and r.request.post_data_json['event']==1) as witness:
+                page.keyboard.down(key)
+            r=witness.value
+            assert r.ok and r.request.post_data_json['n']==note
+            pcm=base64.b64decode(r.json()['pcm'],validate=True)
+            assert len(pcm)==2400 and any(pcm)
+            assert int(page.input_value('#n'))==note
+            return pcm
+        page.select_option('#octave',value='48')
+        page.locator('#strike').focus()
+        start=len(requests)
+        tones=[]
+        for i,key in enumerate('zsxdcvgbhnjm,'):
+            tones.append(pitched(key,48+i))
+            if i==0:
+                page.keyboard.down('z')  # repeat
+                page.keyboard.down('s')  # competing note
+                page.keyboard.up('s')
+                assert page.evaluate("heldKey==='KeyZ' && pointer===null")
+            gesture(lambda:page.keyboard.up(key),2)
+        assert len(set(tones))==13
+        assert [q['event'] for q in requests[start:] if q['event']]==[1,2]*13
+        for octave,key,note in [('36','z',36),('72',',',84)]:
+            page.select_option('#octave',value=octave)
+            page.locator('#strike').focus()
+            pitched(key,note)
+            gesture(lambda:page.locator('#p').focus(),2)
+            page.keyboard.up(key)
+            assert page.evaluate("heldKey===null && pointer===null")
+        print('PASS chromatic keyboard: 15 pitch/PCM witnesses, bounds, repeat, competing key and focus release')
 
         # Fail a real request while the engine is active, then reconnect.
         page.route('**/block',lambda route:route.abort())
