@@ -28,10 +28,19 @@ jobs:
           gcc -std=c11 -Wall -Wextra -Werror -O2 -shared $flags instruments/grimoire/orbit.c companion/grimoire/session.c -o out/orbit.$ext
           python companion/grimoire/smoke.py out/orbit.$ext
           node companion/grimoire/test_gesture.cjs
+          node companion/grimoire/test_visual.cjs
           python -c "import hashlib,pathlib; p=pathlib.Path('out'); [(print(f.name,hashlib.sha256(f.read_bytes()).hexdigest())) for f in sorted(p.glob('*.wav'))]"
-          cp companion/grimoire/{host.py,index.html,smoke.py,gesture.js,profile.json,test_gesture.cjs} out/
+          cp companion/grimoire/{host.py,index.html,smoke.py,gesture.js,profile.json,test_gesture.cjs,test_visual.cjs,test_browser.py} out/
           python out/smoke.py out/orbit.$ext
           node out/test_gesture.cjs
+          node out/test_visual.cjs
+      - name: Real Chromium playback and fault integration
+        if: runner.os == 'Linux'
+        timeout-minutes: 8
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+          python out/test_browser.py out/orbit.so --screenshot out/orbit-gate.png
       - uses: actions/upload-artifact@v4
         with:
           name: grimoire-${{ matrix.os }}
