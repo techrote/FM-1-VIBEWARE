@@ -26,10 +26,14 @@ VIBEWARE develops distinct playable instruments: alternative synthesis engines, 
 
 These projects remain independent. No writes to their repositories are authorized by a VIBEWARE worker. Reference PRs are discovery pointers, not automatically accepted dependencies; pin reviewed source revisions and retain provenance and notices before using code.
 
+## Common performance companion
+
+[FM-1-CYDaux](https://github.com/techrote/FM-1-CYDaux) is the standard optional extended performance interface for the majority of VIBEWARE instruments, across all creative lanes. One extensible companion firmware should provide reusable controls, versioned instrument profiles and instrument-specific visualizations. FM-1 remains playable without the CYD; a documented technical or musical exception is acceptable. Basic MIDI control and richer bidirectional profiles are distinct capability levels, not universal hardware promises. Existing third-party firmware profiles must remain supported. See [architecture](docs/ARCHITECTURE.md), [qualification](docs/QUALIFICATION.md) and [CYDAUX-001 #9](https://github.com/techrote/FM-1-VIBEWARE/issues/9) (proposed seventh worker, not activated).
+
 ## Delivery model
 
 Develop portable, bounded audio engines; select the appropriate FM-1 plugin, custom firmware or hybrid adapter; provide real audio renders and interactive audition; independently qualify exact builds; package for owner review. The FM-1 is the primary musical target. CYD and desktop hosts complement it, not substitute for FM-1 execution.
 
-**Current state: programme bootstrap only.** No synthesis engine, target binary, emulator run or hardware qualification has yet been produced in this repository. No firmware is approved for installation. Physical board identity, supported recovery, format/rights and owner acceptance are separate gates; no automated flashing.
+**Current state:** see the [live issues and PRs](https://github.com/techrote/FM-1-VIBEWARE/pulls) for implementation and qualification evidence; portable engine development is underway. No firmware is approved for installation. Physical board identity, supported recovery, format/rights and owner acceptance are separate gates; no automated flashing.
 
 No project-wide license is asserted yet. Owner must decide licensing for new work and any combined distribution. Independently verify all third-party terms, including source and notices obligations, before incorporating or distributing third-party material.
