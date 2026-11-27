@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 from live import make_server
+from feedback import regulate
 
 # Insert a measurement tap into the real output graph, without replacing audio.
 TAP = """(() => {
@@ -71,10 +72,51 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.unroute("**/step")
             page.click("#start")
             page.wait_for_function("window.ecoRms()>0.001")
+            # Record actual native step requests/responses without replacing the core.
+            page.evaluate("""() => {
+                window.ecoWitness=[];
+                const original=post;
+                post=async(path,data)=>{
+                    const result=await original(path,data);
+                    if(path==='/step'){
+                        window.ecoWitness.push({controls:[data.fertility,data.sharing,data.pressure,data.frozen],
+                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks});
+                        if(window.ecoWitness.length>32)window.ecoWitness.shift();
+                    }
+                    return result;
+                };
+            }""")
+            page.locator("#goal").focus()
+            page.keyboard.press("Home")
+            assert page.input_value("#goal")=="1"
+            page.check("#feedback")
+            page.wait_for_function("window.ecoWitness.length>=9")
+            rows=page.evaluate("window.ecoWitness.slice()")
+            for prev,row in zip(rows[-6:-1],rows[-5:]):
+                assert row["ticks"]==prev["ticks"]+10
+                assert row["controls"]==list(regulate(tuple(prev["controls"]),prev["living"],1)),(prev,row)
+            assert any(r["controls"]!=rows[0]["controls"] for r in rows[2:])
+            page.locator("#fertility").focus()
+            page.keyboard.press("Home")
+            assert not page.is_checked("#feedback")
+            page.wait_for_function("window.ecoWitness.slice(-2).every(r=>r.controls[0]===0)")
+            page.check("#feedback")
+            page.check("#frozen")
+            assert not page.is_checked("#feedback") and page.is_disabled("#feedback")
+            page.wait_for_function("window.ecoWitness.slice(-2).every(r=>r.controls[3]===1)")
+            page.uncheck("#frozen")
+            assert not page.is_disabled("#feedback")
+            page.check("#feedback")
+            page.click("#stop")
+            assert not page.is_checked("#feedback") and page.is_disabled("#feedback")
+            page.wait_for_function("window.ecoRms()<0.000001")
+            page.click("#start")
+            page.wait_for_function("window.ecoRms()>0.001")
+            assert not page.is_checked("#feedback")
             page.click("#stop")
             assert not errors,errors
             browser.close()
-            print("PASS Chromium native audio graph, XY gesture, regime reset, panic, fault and reconnect")
+            print("PASS Chromium native audio graph, XY gesture, regime reset, panic, fault, reconnect and actual-state population feedback/manual override")
     finally:
         server.shutdown()
         worker.join()
