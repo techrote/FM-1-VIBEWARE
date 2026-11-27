@@ -1,0 +1,2 @@
+2048-frame actual-core strike nonzero samples=604
+CY1 independent C/C++ interoperability with actual Xeno core: PASS; 20000 sequence-wrap controls, lease/panic/session/malformed/audio checks
