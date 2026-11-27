@@ -12,4 +12,22 @@ class GestureQueue {
   shift(){return this.items.shift();}
   get length(){return this.items.length;}
 }
+class OrbitRibbon {
+  static path=[[24,18],[48,48],[84,110],[108,76],[72,26],[36,98],[12,120],[36,46]];
+  constructor(){this.reset();}
+  reset(){this.speed=0;this.phase=0;this.carry=0;this.manual=false;this.blend=0;this.x=24;this.y=18;this.fromX=24;this.fromY=18;}
+  setSpeed(speed){if(![1,2,4].includes(speed))throw RangeError('ribbon speed');this.speed=speed;}
+  take(x,y){if(![x,y].every(v=>Number.isInteger(v)&&v>=0&&v<=127))throw RangeError('ribbon XY');this.manual=true;this.blend=0;this.x=x;this.y=y;}
+  resume(){if(this.manual){this.manual=false;this.blend=8;this.fromX=this.x;this.fromY=this.y;}}
+  tick(){const i=this.phase>>5,k=this.phase%32,p=OrbitRibbon.path[i],q=OrbitRibbon.path[(i+1)%8];
+    const lerp=(a,b,n,d)=>Math.floor((a*(d-n)+b*n+d/2)/d);
+    const x=lerp(p[0],q[0],k,32),y=lerp(p[1],q[1],k,32);
+    if(!this.manual){if(this.blend){const n=9-this.blend;this.x=lerp(this.fromX,x,n,8);this.y=lerp(this.fromY,y,n,8);this.blend--;}else{this.x=x;this.y=y;}}
+    this.phase=(this.phase+this.speed)%256;
+  }
+  // The existing native host renders 1200 frames at 24 kHz. Advance
+  // exactly 2.5 of the reference 50 Hz ticks per block, alternating 2/3.
+  block(){if(!this.speed)return null;this.carry+=5;while(this.carry>=2){this.tick();this.carry-=2;}return this.manual?null:[this.x,this.y];}
+}
+GestureQueue.Ribbon=OrbitRibbon;
 if(typeof module!=='undefined')module.exports=GestureQueue;
