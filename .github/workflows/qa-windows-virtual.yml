@@ -1,0 +1,133 @@
+name: QA independent Windows virtual targets
+on:
+  pull_request:
+    paths: ['.github/workflows/qa-windows-virtual.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  linux-rebuild:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0811f94b738533404d6a23516ab9dc0eec9e39fe
+          persist-credentials: false
+      - name: Independent Linux replay from exact PLATFORM source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 0811f94b738533404d6a23516ab9dc0eec9e39fe
+          bash platform/emulator/ci.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-windows-virtual-linux-reference
+          path: platform-results/
+          if-no-files-found: error
+  windows-rebuild:
+    needs: linux-rebuild
+    runs-on: windows-2025
+    timeout-minutes: 70
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0811f94b738533404d6a23516ab9dc0eec9e39fe
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: qa-windows-virtual-linux-reference
+          path: 'independent Linux evidence'
+      - name: Independently rebuild Windows targets and execute shared emulator
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 0811f94b738533404d6a23516ab9dc0eec9e39fe
+          python platform/emulator/ci_windows.py --test
+          python platform/emulator/ci_windows.py 'independent Linux evidence' 'independent Windows evidence'
+      - name: Independent PCM, XIP, panel and provenance checks against frozen author evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15237703624/zip" > author-windows.zip
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15236508886/zip" > author-linux.zip
+          python - <<'PY'
+          import hashlib, io, json, math, wave, zipfile
+          from pathlib import Path
+          def sha(b):
+              return hashlib.sha256(b).hexdigest()
+          def archive(path, digest):
+              raw=Path(path).read_bytes()
+              assert sha(raw)==digest, path
+              z=zipfile.ZipFile(io.BytesIO(raw))
+              assert len(z.namelist())==len(set(z.namelist()))
+              assert sum(i.file_size for i in z.infolist())<128*1024*1024
+              return z
+          aw=archive('author-windows.zip','f381189a4791d73115a8e18352452e8a09118f47316b92e5c135067083c234e2')
+          al=archive('author-linux.zip','187940d0f53b06d37e28da2a4d12db7fbe9a10b424e192392f2336eaae45b837')
+          w=Path('independent Windows evidence')
+          l=Path('independent Linux evidence')
+          names=('grimoire','ecophon','chronomorph')
+          cases=('orbit-n3','orbit-n3-repeat','orbit-n9','orbit-n3-uc25','eco-low','eco-low-repeat','eco-high','eco-scarcity','eco-scarcity-repeat','chrono-low','chrono-low-repeat','chrono-warp','chrono-preset','chrono-preset-repeat','chrono-tempo')
+          def pcm(data):
+              with wave.open(io.BytesIO(data),'rb') as f:
+                  assert (f.getnchannels(),f.getsampwidth(),f.getframerate(),f.getcomptype())==(2,2,44100,'NONE')
+                  n=f.getnframes()
+                  raw=f.readframes(n)
+              assert n>=176400 and len(raw)==n*4 and any(raw[:-88200]) and not any(raw[-88200:])
+              return raw,n
+          receipt={'platform':'0811f94b738533404d6a23516ab9dc0eec9e39fe','headless':{},'targets':{}}
+          assert json.loads((w/'status.json').read_text())==dict.fromkeys(names,'PASS')
+          pins=json.loads((w/'pins.json').read_text())
+          assert pins==json.loads(aw.read('pins.json')) and pins['platform']==receipt['platform']
+          assert pins['emu']=='736aded65c8e2e9d652cf595fca248734483a877'
+          for case in cases:
+              fn=case+'.wav'
+              b=(w/fn).read_bytes()
+              assert b==(l/fn).read_bytes()==aw.read(fn)==al.read(fn),case
+              _,n=pcm(b)
+              receipt['headless'][case]={'sha256':sha(b),'frames':n}
+          for a,b in (('orbit-n3','orbit-n9'),('eco-low','eco-high'),('eco-low','eco-scarcity'),('chrono-low','chrono-warp'),('chrono-low','chrono-tempo'),('chrono-low','chrono-preset')):
+              assert receipt['headless'][a]['sha256']!=receipt['headless'][b]['sha256'],(a,b)
+          for a,b in (('orbit-n3','orbit-n3-repeat'),('eco-low','eco-low-repeat'),('eco-scarcity','eco-scarcity-repeat'),('chrono-low','chrono-low-repeat'),('chrono-preset','chrono-preset-repeat')):
+              assert receipt['headless'][a]==receipt['headless'][b],(a,b)
+          for name in names:
+              fn=name+'-xip.json'
+              x=json.loads((w/fn).read_text())
+              for y in (json.loads((l/fn).read_text()),json.loads(aw.read(fn)),json.loads(al.read(fn))):
+                  assert (x['bytes'],x['xip_sha256'])==(y['bytes'],y['xip_sha256'])
+              assert x['purpose']=='emulator-only' and (w/(name+'.map')).stat().st_size>0
+              live=(w/(name+'-live.wav')).read_bytes()
+              _,n=pcm(live)
+              m=json.loads((w/(name+'-live.json')).read_text())
+              assert m['audioFrames']==n and m['emulatedMs']>=4500
+              assert all(math.isfinite(m[k]) and m[k]>0 for k in ('wallSeconds','realtime','steadyRealtime'))
+              assert type(m['starvedHalves']) is int and m['starvedHalves']>=0
+              panel=json.loads((w/(name+'-panel.json')).read_text())
+              assert (panel['width'],panel['height'])==(1280,820)
+              assert [f['ms'] for f in panel['frames']]==[0,1000,2000,3000,4000]
+              assert panel['frames'][0]['sha256']!=panel['frames'][2]['sha256']
+              for tag,digest in (('active',panel['frames'][2]['sha256']),('muted',panel['final_sha256'])):
+                  b=(w/(name+'-panel-'+tag+'.ppm')).read_bytes()
+                  header=b'P6\n1280 820\n255\n'
+                  assert b.startswith(header) and len(b)==len(header)+1280*820*3 and sha(b)==digest
+                  pixels=b[len(header):]
+                  assert pixels!=pixels[:3]*(1280*820)
+              receipt['targets'][name]={'xip_sha256':x['xip_sha256'],'xip_bytes':x['bytes'],'live_frames':n,'live_pcm_sha256':sha(live),'metrics':m,'panel':panel}
+          for name in ('fm1-emu','fm1-live'):
+              assert 'Import' in (w/(name+'-imports.txt')).read_text(),name
+          (w/'qa-independent.json').write_text(json.dumps(receipt,sort_keys=True,indent=2))
+          print(json.dumps(receipt,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-independent-windows-virtual-evidence
+          path: 'independent Windows evidence/'
+          if-no-files-found: warn
