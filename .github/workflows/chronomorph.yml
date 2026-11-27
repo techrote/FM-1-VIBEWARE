@@ -1,0 +1,51 @@
+name: Chronomorph native audition
+on:
+  push:
+    paths:
+      - 'instruments/chronomorph/**'
+      - '.github/workflows/chronomorph.yml'
+  pull_request:
+    paths:
+      - 'instruments/chronomorph/**'
+      - '.github/workflows/chronomorph.yml'
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: instruments/chronomorph
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and exercise actual core
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -pedantic chrono.c audition.c -o chronomorph.exe
+          ./chronomorph.exe --test
+          python smoke.py ./chronomorph.exe
+      - name: Linux UBSan
+        if: runner.os == 'Linux'
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all chrono.c audition.c -o sanitized
+          ./sanitized --test
+      - name: Render compositions and verify exact reference WAVs
+        run: |
+          mkdir -p audition
+          ./chronomorph.exe --render audition/glass-lattice.wav 0 17 112 24 12 12 7 73 5 21 11 1321
+          ./chronomorph.exe --render audition/broken-meridian.wav 1 17 142 -32 12 12 5 21 9 297 7 85
+          ./chronomorph.exe --render audition/slow-eclipse.wav 2 17 84 48 12 12 9 293 7 73 13 4693
+          python -c "import hashlib,pathlib; expected={'glass-lattice':'d4d889efef0831c5ade6d614c40f66eb3476aaaed777cc465f643cf7f46f246a','broken-meridian':'80ab28577e2f2572708c4dcb2f19b89b0cf9a1585a1c0849d2d9891670d35058','slow-eclipse':'3a0b4ae74b2af0ac426b9ee9fd6ec97c715809b5cbe3d90b25c773785d31c05e'}; actual={p.stem:hashlib.sha256(p.read_bytes()).hexdigest() for p in pathlib.Path('audition').glob('*.wav')}; print(actual); assert actual==expected"
+          cp chrono.c chrono.h audition.c server.py smoke.py index.html profile.json README.md chronomorph.exe audition/
+          git rev-parse HEAD > audition/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chronomorph-native-${{ runner.os }}
+          path: instruments/chronomorph/audition/
+          if-no-files-found: error
