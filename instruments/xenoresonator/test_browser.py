@@ -149,6 +149,41 @@ try:
             assert page.evaluate("heldKey===null && pointer===null")
         print('PASS chromatic keyboard: 15 pitch/PCM witnesses, bounds, repeat, competing key and focus release')
 
+        # Factory patches are single control-frame changes, never note events.
+        patches = page.evaluate("JSON.parse(document.querySelector('#patch-data').textContent)")
+        assert len(patches)==6
+        note,velocity=map(int,(page.input_value('#n'),page.input_value('#v')))
+        start=len(requests)
+        for patch in patches:
+            with page.expect_request(lambda req:req.url==url+'/block' and
+                    req.method=='POST' and req.post_data_json['event']==0 and
+                    all(req.post_data_json[k]==patch[k] for k in ('p','e','d','c'))):
+                page.select_option('#patch',value=patch['id'])
+            assert all(int(page.input_value('#'+k))==patch[k] for k in ('p','e','d','c'))
+            assert (int(page.input_value('#n')),int(page.input_value('#v')))==(note,velocity)
+        assert not any(q['event'] for q in requests[start:])
+        page.locator('#e').fill('55')
+        assert page.input_value('#patch')==''
+        page.select_option('#patch',value='ceramic-chime')
+        page.locator('#xy').scroll_into_view_if_needed()
+        page.locator('#xy').click(position={'x':20,'y':20})
+        assert page.input_value('#patch')==''
+        # A programmatic same-session patch switch does not release a held note.
+        # Ordinary user focus changes still follow the existing blur-release rule.
+        page.select_option('#patch',value='ceramic-chime')
+        page.select_option('#octave',value='72')
+        page.locator('#strike').focus()
+        start=len(requests)
+        pitched('z',72)
+        with page.expect_request(lambda req:req.url==url+'/block' and
+                req.method=='POST' and req.post_data_json['event']==0 and
+                req.post_data_json['d']==92 and req.post_data_json['c']==12):
+            page.evaluate("patchPicker.value='ceramic-click';patchPicker.dispatchEvent(new Event('change'))")
+        assert page.evaluate("heldKey==='KeyZ'")
+        gesture(lambda:page.keyboard.up('z'),2)
+        assert [q['event'] for q in requests[start:] if q['event']]==[1,2]
+        print('PASS factory patch controls, manual custom state and no synthetic strike/release')
+
         # Fail a real request while the engine is active, then reconnect.
         page.route('**/block',lambda route:route.abort())
         wait("document.querySelector('#status').textContent.startsWith('Connection lost')")

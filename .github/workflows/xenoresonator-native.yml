@@ -45,6 +45,17 @@ jobs:
           name: xenoresonator-material-passage-${{ matrix.os }}
           path: instruments/xenoresonator/material passage/
           if-no-files-found: error
+      - name: Native factory-patch gallery and held-note causal comparison
+        run: |
+          python patch_gallery.py ./live.dll 'patch gallery'
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('patch gallery/receipt.json').read_bytes()).hexdigest() == 'aa676b6c7996913728bb0859713a96b56f61c3f7a17159460fb11d8fff12f66c'"
+          cp patch_gallery.py live.html 'patch gallery/'
+          git rev-parse HEAD > 'patch gallery/SOURCE-REVISION.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-patch-gallery-${{ matrix.os }}
+          path: instruments/xenoresonator/patch gallery/
+          if-no-files-found: error
       - name: Create audition package and PCM receipts
         run: |
           mkdir -p 'audition package'

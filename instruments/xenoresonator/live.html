@@ -8,6 +8,8 @@
 <button id="start">Start audio</button> <button id="strike" disabled>Hold to strike</button> <button id="stop">Panic / stop</button>
 <p><small>Chromatic keys: focus Hold to strike (automatically focused after Start audio). Z S X D C V G B H N J M , = C through C. One held note at a time; release before the next note.</small></p>
 <label>Keyboard octave <select id="octave"><option value="36">C2–C3</option><option value="48" selected>C3–C4</option><option value="60">C4–C5</option><option value="72">C5–C6</option></select></label>
+<label>Factory patch <select id="patch"><option value="">Custom controls</option></select></label><small>Changes material, excitation, damping and coupling together; does not strike or reset. Note and velocity stay unchanged. Return focus to Hold to strike for chromatic keys.</small>
+<script type="application/json" id="patch-data">[{"id":"ceramic-chime","name":"Ceramic chime","p":0,"e":54,"d":0,"c":100},{"id":"ceramic-click","name":"Ceramic click","p":0,"e":115,"d":92,"c":12},{"id":"woodglass-pluck","name":"Woodglass pluck","p":1,"e":48,"d":24,"c":65},{"id":"alien-bell","name":"Alien bell","p":2,"e":105,"d":0,"c":100},{"id":"alien-scrape","name":"Alien scrape","p":2,"e":127,"d":42,"c":14},{"id":"membrane-pulse","name":"Membrane pulse","p":3,"e":118,"d":9,"c":80}]</script>
 <p id="status" role="status">Stopped</p><div id="modes" aria-hidden="true"><div></div><div></div><div></div><div></div><div></div><div></div></div><p><small>Body A (teal), body B (ochre): actual local modal magnitude proxies sampled within each audio block. Not device telemetry. XY and material changes affect the live decay. No MIDI or device connection.</small></p>
 <script>
 const $=id=>document.getElementById(id), bars=[...$('modes').children];
@@ -49,8 +51,19 @@ strike.onkeydown=e=>{const key=keyIdentity(e);if(key===null||e.ctrlKey||e.altKey
   const semitone=chromatic.indexOf(key);if(semitone>=0)$('n').value=Number($('octave').value)+semitone;heldKey=key;queue(1);};
 strike.onkeyup=e=>{const key=keyIdentity(e);if(key===null)return;e.preventDefault();if(key===heldKey)releaseKey();};
 strike.onblur=releaseKey;
-function dot(){$('dot').style.left=Number($('e').value)/127*100+'%';$('dot').style.top=(1-Number($('d').value)/127)*100+'%';}dot();$('e').oninput=dot;$('d').oninput=dot;
-function xy(e){const r=$('xy').getBoundingClientRect(),clamp=v=>Math.max(0,Math.min(127,Math.round(v*127)));$('e').value=clamp((e.clientX-r.left)/r.width);$('d').value=clamp(1-(e.clientY-r.top)/r.height);dot();}
+function dot(){$('dot').style.left=Number($('e').value)/127*100+'%';$('dot').style.top=(1-Number($('d').value)/127)*100+'%';}dot();
+const patchPicker=$('patch'),patches=JSON.parse($('patch-data').textContent);
+for(const patch of patches)patchPicker.add(new Option(patch.name,patch.id));
+function customPatch(){patchPicker.value='';}
+patchPicker.onchange=()=>{
+  const patch=patches.find(p=>p.id===patchPicker.value);
+  if(!patch)return;
+  for(const k of ['p','e','d','c'])$(k).value=patch[k];
+  dot();
+};
+$('p').onchange=customPatch;$('c').oninput=customPatch;
+$('e').oninput=$('d').oninput=()=>{customPatch();dot();};
+function xy(e){const r=$('xy').getBoundingClientRect(),clamp=v=>Math.max(0,Math.min(127,Math.round(v*127)));$('e').value=clamp((e.clientX-r.left)/r.width);$('d').value=clamp(1-(e.clientY-r.top)/r.height);customPatch();dot();}
 $('xy').onpointerdown=e=>{$('xy').setPointerCapture(e.pointerId);xy(e);};$('xy').onpointermove=e=>{if($('xy').hasPointerCapture(e.pointerId))xy(e);};
 window.addEventListener('blur',()=>stop('Focus lost — muted'));document.addEventListener('visibilitychange',()=>{if(document.hidden)stop('Hidden — muted');});
 </script></html>
