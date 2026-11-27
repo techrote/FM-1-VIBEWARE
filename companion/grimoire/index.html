@@ -1,11 +1,17 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Grimoire · Orbit Gate</title>
 <style>body{background:#131321;color:#e4d9be;font:16px system-ui;max-width:540px;margin:24px auto;padding:12px}canvas{width:100%;max-width:480px;touch-action:none;border:1px solid #9b8060}button{margin:5px;padding:10px;background:#302938;color:inherit;border:1px solid #9b8060}button:disabled{opacity:.4}</style>
-<h1>Orbit Gate</h1><p>Grimoire / native-core virtual companion. Drag to sound; X selects pitch, Y bends the satellites and opens the filter.</p><button id="start">Start audio / connect</button><button id="panic">Panic</button><div id="presets"><button data-p="0">Amber</button><button data-p="1">Iron</button><button data-p="2">Abyss</button></div><canvas id="pad" width="320" height="240"></canvas><p id="state">Disconnected</p>
+<h1>Orbit Gate</h1><p>Grimoire / native-core virtual companion. Drag to sound; X selects pitch, Y bends the satellites and opens the filter.</p><button id="start">Start audio / connect</button><button id="panic">Panic</button><div id="presets"><button data-p="0">Amber</button><button data-p="1">Iron</button><button data-p="2">Abyss</button></div><div id="ribbonControls"><label for="ribbonSpeed">Orbit Ribbon (local model)</label> <select id="ribbonSpeed"><option value="0">Off</option><option value="1">Slow</option><option value="2">Medium</option><option value="4">Fast</option></select><button id="holdGate" disabled aria-pressed="false">Hold gate</button><small>Explicit gate; drag to override, release to resume.</small></div><canvas id="pad" width="320" height="240"></canvas><p id="state">Disconnected</p>
 <script src="/gesture.js"></script>
 <script>
 const pad=document.querySelector('#pad'),ctx=pad.getContext('2d'),status=document.querySelector('#state'),start=document.querySelector('#start');
 let audio=null,bus=null,g=0,next=0,epoch=0,timer=null,pointer=null,connecting=false,inFlight=null;
 const queue=new GestureQueue(),sources=new Set(),visuals=[];
+const ribbon=new GestureQueue.Ribbon(),speedControl=document.querySelector('#ribbonSpeed'),holdControl=document.querySelector('#holdGate');
+let held=false;
+function showRibbon(){speedControl.value=String(ribbon.speed);holdControl.disabled=!g||!ribbon.speed;holdControl.textContent=held?'Release gate':'Hold gate';holdControl.setAttribute('aria-pressed',String(held))}
+function clearRibbon(){ribbon.reset();held=false;showRibbon()}
+speedControl.onchange=()=>{if(!g||connecting||pointer!==null){showRibbon();return}const speed=Number(speedControl.value);if(!speed){stop();return}ribbon.setSpeed(speed);showRibbon()};
+holdControl.onclick=()=>{if(!g||connecting||!ribbon.speed||pointer!==null)return;held=!held;showRibbon();event(2,held?1:0)};
 // Native snapshots describe the END of each PCM block. Display only when that block has played.
 function visualFrame(){if(audio){let d=null;while(visuals.length&&visuals[0].at<=audio.currentTime)d=visuals.shift().state;if(d)draw(d)}requestAnimationFrame(visualFrame)}
 requestAnimationFrame(visualFrame);
@@ -15,27 +21,30 @@ async function request(kind,data={},generation=g){
     if(!r.ok)throw Error('session rejected');return await r.json();
   }finally{clearTimeout(timeout)}
 }
-function cancelAudio(){epoch++;for(const s of sources){try{s.stop()}catch{}}sources.clear();visuals.length=0;ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);status.textContent='Local audio muted';next=audio?audio.currentTime:0}
+function cancelAudio(){clearRibbon();epoch++;for(const s of sources){try{s.stop()}catch{}}sources.clear();visuals.length=0;ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);status.textContent='Local audio muted';next=audio?audio.currentTime:0}
 function stop(){pointer=null;cancelAudio();if(g){queue.panic();pump()}}
 function event(op,a=0,b=0){if(!g||connecting)return;if(!queue.push(op,a,b)){pointer=null;cancelAudio();status.textContent='Gesture overload: panic queued'}pump()}
-function draw(d){ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);const colors=['#ffc67a','#8ecfc7','#a58bd6'];d.phase.forEach((v,i)=>{const a=v/65536*2*Math.PI,r=38+i*25;ctx.strokeStyle=colors[i];ctx.beginPath();ctx.arc(160,120,r,0,Math.PI*2);ctx.stroke();ctx.fillStyle=colors[i];ctx.beginPath();ctx.arc(160+Math.cos(a)*r,120+Math.sin(a)*r,3+d.energy/5000,0,Math.PI*2);ctx.fill()});const x=d.x/127*319,y=(127-d.y)/127*239;ctx.strokeStyle='#ffffff50';ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,240);ctx.moveTo(0,y);ctx.lineTo(320,y);ctx.stroke();ctx.strokeStyle='#fff';ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#34293e';ctx.fillRect(10,222,300,6);ctx.fillStyle=colors[d.preset];ctx.fillRect(10,222,300*Math.min(1,d.env/32767),6);status.textContent='Local native core (not device telemetry) · '+['Amber','Iron','Abyss'][d.preset]+' · energy '+d.energy+' · '+(d.gate?'gate':'release')}
+function draw(d){ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);const colors=['#ffc67a','#8ecfc7','#a58bd6'];d.phase.forEach((v,i)=>{const a=v/65536*2*Math.PI,r=38+i*25;ctx.strokeStyle=colors[i];ctx.beginPath();ctx.arc(160,120,r,0,Math.PI*2);ctx.stroke();ctx.fillStyle=colors[i];ctx.beginPath();ctx.arc(160+Math.cos(a)*r,120+Math.sin(a)*r,3+d.energy/5000,0,Math.PI*2);ctx.fill()});if(ribbon.speed){ctx.strokeStyle='#ffc67a60';ctx.beginPath();GestureQueue.Ribbon.path.forEach(([px,py],i)=>{const x=px/127*319,y=(127-py)/127*239;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)});ctx.closePath();ctx.stroke()}const x=d.x/127*319,y=(127-d.y)/127*239;ctx.strokeStyle='#ffffff50';ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,240);ctx.moveTo(0,y);ctx.lineTo(320,y);ctx.stroke();ctx.strokeStyle='#fff';ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#34293e';ctx.fillRect(10,222,300,6);ctx.fillStyle=colors[d.preset];ctx.fillRect(10,222,300*Math.min(1,d.env/32767),6);status.textContent='Local native core (not device telemetry) · '+['Amber','Iron','Abyss'][d.preset]+' · energy '+d.energy+' · '+(d.gate?'gate':'release')}
 function pump(){if(!audio||!g||connecting||inFlight)return;const item=queue.shift();if(!item&&next-audio.currentTime>.12)return;const e=epoch,gen=g;
   inFlight=(async()=>{try{
     if(item){await request('event',{op:item[0],a:item[1],b:item[2]},gen);return}
+    const xy=ribbon.block();
+    if(xy){await request('event',{op:1,a:xy[0],b:xy[1]},gen);if(e!==epoch||gen!==g)return}
     const d=await request('audio',{},gen);if(e!==epoch||gen!==g)return;
     const bytes=Uint8Array.from(atob(d.pcm),c=>c.charCodeAt(0)),dv=new DataView(bytes.buffer),b=audio.createBuffer(1,bytes.length/2,d.rate),f=b.getChannelData(0);for(let i=0;i<f.length;i++)f[i]=dv.getInt16(i*2,true)/32768;const s=audio.createBufferSource();s.buffer=b;s.connect(bus);sources.add(s);s.onended=()=>sources.delete(s);next=Math.max(next,audio.currentTime+.015);s.start(next);next+=b.duration;
     if(visuals.length>=8)visuals.shift();visuals.push({at:next,state:d});
-  }catch(err){cancelAudio();g=0;pointer=null;queue.clear();status.textContent='Disconnected: '+err.message;clearInterval(timer);timer=null}})().finally(()=>{inFlight=null;if(queue.length)pump()});
+  }catch(err){cancelAudio();g=0;showRibbon();pointer=null;queue.clear();status.textContent='Disconnected: '+err.message;clearInterval(timer);timer=null}})().finally(()=>{inFlight=null;if(queue.length)pump()});
 }
 start.onclick=async()=>{if(connecting)return;connecting=true;start.disabled=true;pointer=null;cancelAudio();queue.clear();clearInterval(timer);timer=null;
-  try{if(inFlight)await inFlight;g=0;if(!audio){audio=new AudioContext();bus=audio.createGain();bus.connect(audio.destination)}await audio.resume();const d=await request('connect',{version:1},0);g=d.generation;next=audio.currentTime;status.textContent='Connected to local core';timer=setInterval(pump,20)}
+  try{if(inFlight)await inFlight;g=0;if(!audio){audio=new AudioContext();bus=audio.createGain();bus.connect(audio.destination)}await audio.resume();const d=await request('connect',{version:1},0);g=d.generation;showRibbon();next=audio.currentTime;status.textContent='Connected to local core';timer=setInterval(pump,20)}
   catch(err){g=0;status.textContent='Connection failed: '+err.message}
   finally{connecting=false;start.disabled=false;pump()}
 };
-function xy(e){const r=pad.getBoundingClientRect(),x=Math.max(0,Math.min(127,Math.round((e.clientX-r.left)/r.width*127))),y=Math.max(0,Math.min(127,Math.round((1-(e.clientY-r.top)/r.height)*127)));event(1,x,y)}
-let last=0;pad.onpointerdown=e=>{if(!g||connecting||pointer!==null)return;pointer=e.pointerId;pad.setPointerCapture(e.pointerId);xy(e);if(pointer!==null)event(2,1)};
+function xy(e){const r=pad.getBoundingClientRect(),x=Math.max(0,Math.min(127,Math.round((e.clientX-r.left)/r.width*127))),y=Math.max(0,Math.min(127,Math.round((1-(e.clientY-r.top)/r.height)*127)));if(ribbon.speed)ribbon.take(x,y);event(1,x,y)}
+let last=0;pad.onpointerdown=e=>{if(!g||connecting||pointer!==null)return;pointer=e.pointerId;pad.setPointerCapture(e.pointerId);xy(e);if(pointer!==null&&!held)event(2,1)};
 pad.onpointermove=e=>{if(pointer===e.pointerId&&performance.now()-last>45){last=performance.now();xy(e)}};
-pad.onpointerup=pad.onpointercancel=pad.onlostpointercapture=e=>{if(pointer!==e.pointerId)return;pointer=null;event(2,0)};
+pad.onpointerup=e=>{if(pointer!==e.pointerId)return;pointer=null;ribbon.resume();if(!held)event(2,0)};
+pad.onpointercancel=pad.onlostpointercapture=e=>{if(pointer===e.pointerId)stop()};
 window.addEventListener('blur',stop);document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});document.querySelector('#panic').onclick=stop;
 document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{stop();event(3,Number(b.dataset.p))});
 ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);
