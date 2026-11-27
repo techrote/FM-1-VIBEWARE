@@ -3,7 +3,7 @@
   "version": 1,
   "status": "provisional local semantics; not a wire protocol",
   "intendedTier": "basic MIDI clock/controls where verified; enhanced pattern editing and clock telemetry where supported",
-  "verifiedTier": "native standalone core and local HTTP render fixture only",
+  "verifiedTier": "native standalone core and offline HTTP fixture; persistent local fixture candidate (see CI)",
   "sampleRate": 24000,
   "parameters": [
     {
@@ -72,7 +72,7 @@
       "clock",
       "playing"
     ],
-    "fixture": "render response reports final step:ticks:hits, not live telemetry"
+    "fixture": "offline final state or bounded local live block-end step/ticks/hits/cycle/clock snapshot; no device feedback"
   },
   "unsupported": [
     "verified MIDI transport",
