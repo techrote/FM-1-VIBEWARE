@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "kind": "native-host-only",
+  "packages": [
+    {
+      "id": "chronomorph",
+      "name": "Chronomorph",
+      "source": "be57d9f77e9325271adbd4558dfd554c6cd81e19",
+      "run": 46049840733,
+      "artifact": 15224186300,
+      "sha256": "56e932ba9c9d87233a2ab4a9b0667c14f2894a74cdd326209cb7f6bcabccaba9",
+      "qa": "independent Windows/Linux native PASS",
+      "qa_run": 46052418981,
+      "entry": "live.py",
+      "library": "chronomorph-live.dll",
+      "library_flag": false,
+      "page": "Chronomorph",
+      "controls": "Patterns, tempo, warp, variation, transport"
+    },
+    {
+      "id": "ecophon",
+      "name": "Ecophon",
+      "source": "88ef1da1d013457c416e2168ae64836a68fbc4d4",
+      "run": 46051102021,
+      "artifact": 15224337693,
+      "sha256": "8dc286554c5747cc0fa380c3bee4ae986e8ce100c3a77575425b22aebf94a1aa",
+      "qa": "independent Windows/Linux native PASS",
+      "qa_run": 46052418981,
+      "entry": "live.py",
+      "library": "ecof.dll",
+      "library_flag": true,
+      "page": "Ecophon",
+      "controls": "Fertility, sharing, pressure, habitat regimes"
+    },
+    {
+      "id": "xenoresonator",
+      "name": "Xenoresonator",
+      "source": "cc3aa472b267e601d11c811fe7f390970db5348b",
+      "run": 46047918198,
+      "artifact": 15222813934,
+      "sha256": "51bc83a5953d5679ac91e0ec4195db4098023482bd2a3bc58ae778fd27907024",
+      "qa": "independent Windows/Linux native PASS",
+      "qa_run": 46052567781,
+      "entry": "live.py",
+      "library": "live.dll",
+      "library_flag": false,
+      "page": "Xenoresonator",
+      "controls": "Strike, material, damping, coupling, pitch"
+    },
+    {
+      "id": "grimoire",
+      "name": "Grimoire Orbit Gate",
+      "source": "e999ac2d3c0556132f92ffd1036617ac87c0118f",
+      "run": 46051873988,
+      "artifact": 15224732379,
+      "sha256": "a555e3f36dd87f61dd138e040f25c97373f5c5854a72be21ac67839211feb61e",
+      "qa": "author native/browser PASS; independent latest archive pending",
+      "qa_run": null,
+      "entry": "host.py",
+      "library": "orbit.dll",
+      "library_flag": false,
+      "page": "Orbit Gate",
+      "controls": "Sustained gate, XY pitch/material, presets, panic"
+    }
+  ]
+}

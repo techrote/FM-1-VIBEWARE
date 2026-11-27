@@ -1,0 +1,47 @@
+name: QA Windows native selector
+on:
+  pull_request:
+    paths: ['catalogue/selector.py','catalogue/native-packages.json','.github/workflows/qa-native-selector.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-selector:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Actual original Windows archives, verified extraction and local launch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p 'downloaded archives'
+          python catalogue/selector.py
+          for entry in chronomorph:15224186300 ecophon:15224337693 xenoresonator:15222813934 grimoire:15224732379; do
+            instrument=${entry%%:*}
+            id=${entry##*:}
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "downloaded archives/$instrument.zip"
+            python catalogue/selector.py "$instrument" "downloaded archives/$instrument.zip" --verify
+            python catalogue/selector.py "$instrument" "downloaded archives/$instrument.zip" --probe --allow-provisional
+          done
+      - name: Stage source-only selector
+        run: |
+          mkdir -p selector
+          cp catalogue/selector.py catalogue/native-packages.json catalogue/SELECTOR.md selector/
+          git rev-parse HEAD > selector/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibeware-windows-native-selector-source
+          path: selector/
+          if-no-files-found: error

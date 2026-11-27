@@ -24,14 +24,15 @@ SOURCE = ("ecophon.c", "ecophon.h", "fixture.c", "live.py", "live.html", "profil
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
-def extract(archive, dest, expected):
+def extract(archive, dest, expected, ignored=()):
     assert sha(archive.read_bytes()) == expected, "original archive digest mismatch"
     with zipfile.ZipFile(archive) as z:
         names = z.namelist()
         assert len(names) == len(set(n.casefold() for n in names)), "duplicate name"
-        assert all(n and n not in (".", "..") and "/" not in n and chr(92) not in n and ":" not in n for n in names), "non-flat archive"
+        kept = [n for n in names if n not in ignored]
+        assert all(n and n not in (".", "..") and "/" not in n and chr(92) not in n and ":" not in n for n in kept), "unexpected non-flat archive"
         assert sum(i.file_size for i in z.infolist()) < 30_000_000
-        z.extractall(dest)
+        z.extractall(dest, members=kept)
 
 def witness(root, library):
     # Exercise the actual packaged entry point in a separate process.
