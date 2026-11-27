@@ -117,3 +117,33 @@ for other in eco-high eco-scarcity; do
   fi
 done
 echo "Ecophon actual target PCM repeat, pressure and preset contrast, HOME tail PASS" | tee "$RES/ecophon-result.txt"
+
+# Third consumer. Preserve the complete reference, Orbit and Ecophon gates.
+CHRONO=be57d9f77e9325271adbd4558dfd554c6cd81e19
+checkout https://github.com/techrote/FM-1-VIBEWARE.git "$TMP/chrono-core" "$CHRONO"
+ENGINE="$TMP/chrono-core/instruments/chronomorph"
+printf 'chronomorph_core=%s\n' "$CHRONO" >> "$RES/pins.txt"
+for cc in gcc clang; do
+  "$cc" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -O2 -I"$ENGINE" "$HERE/test_chrono_runtime.c" "$ENGINE/chrono.c" -o "$TMP/test-chrono"
+  "$TMP/test-chrono" | tee "$RES/chronomorph-adapter-$cc.txt"
+done
+cp "$HERE/chrono_app.c" firmware/src/dinghy.c
+"$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffunction-sections -fno-builtin -Wall -Wno-unused-function -Ifirmware/hal -Ifirmware/src -Ifirmware/gen -I"$ENGINE" -I"$HERE" -DAPP_VER='"dev"' -DFELUCCA_ID='"FM-1_990"' -c firmware/src/dinghy.c -o "$TMP/chrono-app.o"
+"$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffreestanding -fno-builtin -ffunction-sections -I"$HERE/include" -Wall -Wextra -Werror -c "$ENGINE/chrono.c" -o "$TMP/chrono.o"
+"$TC/ld.lld" --gc-sections -e _start -T firmware/app.ld -Map="$RES/chronomorph.map" "$TMP/crt0.o" "$TMP/fm1_vec.o" "$TMP/fm1_isr.o" "$TMP/chrono-app.o" "$TMP/chrono.o" -o "$TMP/chronomorph.elf"
+"$TC/llvm-readelf" -h -l "$TMP/chronomorph.elf" | tee "$RES/chronomorph-elf.txt"
+"$TC/llvm-size" -A "$TMP/chronomorph.elf" | tee "$RES/chronomorph-size.txt"
+test -z "$("$TC/llvm-nm" -u "$TMP/chronomorph.elf")"
+python3 "$HERE/elf_xip.py" "$TMP/chronomorph.elf" "$TMP/chronomorph.xip.bin" | tee "$RES/chronomorph-xip.json"
+run_case "$TMP/chronomorph.xip.bin" chrono-low p25q80 3
+run_case "$TMP/chronomorph.xip.bin" chrono-low-repeat p25q80 3
+run_case "$TMP/chronomorph.xip.bin" chrono-warp p25q80 24
+run_case "$TMP/chronomorph.xip.bin" chrono-preset p25q80 3 "350-450:SCL,600-700:N3,900-1000:PLAY,3600-3700:HOME"
+run_case "$TMP/chronomorph.xip.bin" chrono-tempo p25q80 3 "600-700:N3,900-1000:PLAY,1700:K1:+12,3600-3700:HOME"
+cmp "$RES/chrono-low.wav" "$RES/chrono-low-repeat.wav"
+for other in chrono-warp chrono-preset chrono-tempo; do
+  if cmp -s "$RES/chrono-low.wav" "$RES/$other.wav"; then
+    echo "FAIL: Chronomorph panel control aliased: $other" >&2; exit 1
+  fi
+done
+echo "Chronomorph actual target PCM repeat, warp, preset, live tempo contrast and HOME tail PASS" | tee "$RES/chronomorph-result.txt"
