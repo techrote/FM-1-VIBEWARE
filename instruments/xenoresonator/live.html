@@ -1,0 +1,48 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Xenoresonator Live</title>
+<style>body{background:#12171c;color:#dce5e9;font:16px system-ui;max-width:640px;margin:auto;padding:20px}label{display:block;margin:12px 0}input[type=range]{width:100%}button,select,input{font:inherit}button{padding:12px;touch-action:none}#strike{background:#84c5bc;color:#101819}#xy{height:150px;background:#223c42;touch-action:none;position:relative;border:1px solid #7b9ca1}#dot{position:absolute;width:14px;height:14px;background:#e0d0a0;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none}#modes{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;height:110px;align-items:end}#modes div{height:0;background:#7fc5bb;min-height:2px}#modes div:nth-child(n+4){background:#c9a16e}small{color:#aebdc2}</style>
+<h1>Xenoresonator</h1><p>Live coupled materials · local native engine</p>
+<label>Material <select id="p"><option value="0">Ceramic</option><option value="1">Woodglass</option><option value="2">Alien metal</option><option value="3">Membrane</option></select></label>
+<label>Excitation / X <input type="range" id="e" min="0" max="127" value="76"></label><label>Damping / Y <input type="range" id="d" min="0" max="127" value="12"></label>
+<div id="xy" aria-label="Excitation and damping XY surface"><span id="dot"></span></div>
+<label>Coupling <input type="range" id="c" min="0" max="127" value="90"></label><label>Pitch <input type="range" id="n" min="36" max="84" value="48"></label><label>Velocity <input type="range" id="v" min="1" max="127" value="110"></label>
+<button id="start">Start audio</button> <button id="strike" disabled>Hold to strike</button> <button id="stop">Panic / stop</button>
+<p id="status" role="status">Stopped</p><div id="modes" aria-hidden="true"><div></div><div></div><div></div><div></div><div></div><div></div></div><p><small>Body A (teal), body B (ochre): actual local modal magnitude proxies sampled within each audio block. Not device telemetry. XY and material changes affect the live decay. No MIDI or device connection.</small></p>
+<script>
+const $=id=>document.getElementById(id), bars=[...$('modes').children];
+let ctx,token=null,epoch=0,seq=0,next=0,opening=false,active=false,events=[],visuals=[],sources=new Set(),gaps=0;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function post(path,q){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q)});if(!r.ok)throw Error('HTTP '+r.status);return r.json();}
+function paint(levels){bars.forEach((b,i)=>b.style.height=Math.min(100,100*Math.sqrt(levels[i]/131070))+'%');}
+function stop(reason='Stopped'){
+  epoch++; active=false;pointer=null;events=[];visuals=[];for(const s of sources){try{s.stop();}catch{}}sources.clear();paint([0,0,0,0,0,0]);
+  const old=token;token=null;if(old)post('/panic',{token:old}).catch(()=>{});
+  $('strike').disabled=true;$('start').disabled=opening;$('status').textContent=reason;
+}
+function queue(event){if(!active)return;if(events.length>=8){stop('Gesture overflow — muted');return;}
+  events.push({event,n:Number($('n').value),v:Number($('v').value)});}
+async function start(){if(opening||active)return;opening=true;$('start').disabled=true;const g=++epoch;
+  try{ctx??=new AudioContext();await ctx.resume();const opened=await post('/open',{version:1});
+    if(g!==epoch){await post('/panic',{token:opened.token}).catch(()=>{});return;}
+    token=opened.token;seq=0;gaps=0;next=ctx.currentTime+.08;active=true;$('strike').disabled=false;$('status').textContent='Live';pump(g);
+  }catch(e){if(g===epoch)stop(String(e));}finally{opening=false;$('start').disabled=active;}}
+async function pump(g){try{while(active&&epoch===g){
+  if(next-ctx.currentTime>.10){await sleep(10);continue;}
+  const q={token,seq};for(const k of ['p','e','d','c','n','v'])q[k]=Number($(k).value);Object.assign(q,events.shift()||{event:0});
+  const r=await post('/block',q);if(!active||epoch!==g)return;if(r.seq!==seq++)throw Error('Sequence mismatch');
+  const bytes=Uint8Array.from(atob(r.pcm),c=>c.charCodeAt(0));if(bytes.length!==2400)throw Error('PCM size');
+  const dv=new DataView(bytes.buffer),buffer=ctx.createBuffer(1,1200,24000),out=buffer.getChannelData(0);for(let i=0;i<1200;i++)out[i]=dv.getInt16(2*i,true)/32768;
+  if(next<ctx.currentTime){gaps++;next=ctx.currentTime+.02;}
+  const source=ctx.createBufferSource();source.buffer=buffer;source.connect(ctx.destination);sources.add(source);source.onended=()=>sources.delete(source);source.start(next);
+  if(visuals.length>=8)visuals.shift();visuals.push({at:next,levels:r.levels});next+=.05;
+  $('status').textContent='Live · buffer gaps '+gaps;
+}}catch(e){if(g===epoch)stop('Connection lost — muted: '+e.message);}}
+function animate(){while(ctx&&visuals.length&&visuals[0].at<=ctx.currentTime)paint(visuals.shift().levels);requestAnimationFrame(animate);}animate();
+$('start').onclick=start;$('stop').onclick=()=>stop();
+let pointer=null;const strike=$('strike');strike.onpointerdown=e=>{if(pointer!==null||!active)return;pointer=e.pointerId;strike.setPointerCapture(pointer);queue(1);};
+function release(e){if(e.pointerId!==pointer)return;pointer=null;queue(2);}strike.onpointerup=release;strike.onpointercancel=release;strike.onlostpointercapture=release;
+strike.onkeydown=e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();queue(1);}};strike.onkeyup=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();queue(2);}};
+function dot(){$('dot').style.left=Number($('e').value)/127*100+'%';$('dot').style.top=(1-Number($('d').value)/127)*100+'%';}dot();$('e').oninput=dot;$('d').oninput=dot;
+function xy(e){const r=$('xy').getBoundingClientRect(),clamp=v=>Math.max(0,Math.min(127,Math.round(v*127)));$('e').value=clamp((e.clientX-r.left)/r.width);$('d').value=clamp(1-(e.clientY-r.top)/r.height);dot();}
+$('xy').onpointerdown=e=>{$('xy').setPointerCapture(e.pointerId);xy(e);};$('xy').onpointermove=e=>{if($('xy').hasPointerCapture(e.pointerId))xy(e);};
+window.addEventListener('blur',()=>stop('Focus lost — muted'));document.addEventListener('visibilitychange',()=>{if(document.hidden)stop('Hidden — muted');});
+</script></html>

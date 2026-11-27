@@ -31,15 +31,18 @@ jobs:
           ./test.exe
           gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c render.c -o render.exe
           python test_http.py ./render.exe
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC xeno.c live_bridge.c -o live.dll
+          python test_live.py ./live.dll
       - name: Create audition package and PCM receipts
         run: |
           mkdir -p 'audition package'
-          cp render.exe audition.py test_http.py README.md profile.json xeno.c xeno.h test.c render.c 'audition package/'
+          cp render.exe audition.py test_http.py README.md profile.json xeno.c xeno.h test.c render.c live.dll live.py live.html live_bridge.c test_live.py 'audition package/'
           for p in 0 1 2 3; do ./render.exe "audition package/material$p.wav" "$p" 76 12 90 48 110 phrase; done
           ./render.exe 'audition package/uncoupled.wav' 2 76 12 0 48 110 phrase
           cd 'audition package'
           python -c "import wave,glob,hashlib; print('\n'.join(p+' '+hashlib.sha256(wave.open(p).readframes(144000)).hexdigest() for p in sorted(glob.glob('*.wav'))))" > PCM-SHA256.txt
           python test_http.py ./render.exe
+          python test_live.py ./live.dll
           git rev-parse HEAD > SOURCE-REVISION.txt
       - uses: actions/upload-artifact@v4
         with:
