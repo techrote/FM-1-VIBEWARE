@@ -61,6 +61,17 @@ jobs:
           import array, hashlib, json, re, sys, wave
           def sha(b):
               return hashlib.sha256(b).hexdigest()
+          METRIC_NAMES = {'target_audio_blocks', 'target_audio_max_ticks', 'target_reply_deferrals', 'emulated_main_stack_used', 'emulated_supervisor_stack_used'}
+          def parse_metrics(raw):
+              metrics = {}
+              for line in raw.splitlines():
+                  match = re.fullmatch(r'([a-z_]+)=([0-9]+)', line)
+                  assert match, ('malformed metric', line)
+                  name, value = match.groups()
+                  assert name in METRIC_NAMES and name not in metrics, ('unexpected/duplicate metric', name)
+                  metrics[name] = int(value)
+              assert metrics.keys() == METRIC_NAMES, ('missing metrics', METRIC_NAMES - metrics.keys())
+              return metrics
           def inspect(root):
               pins = dict(x.split('=',1) for x in (root/'pins.txt').read_text().splitlines())
               assert pins['integration'] == '3449ead4dd13d91ba0a57262a48349f38d6c465c'
@@ -83,7 +94,7 @@ jobs:
                   report = json.loads((folder/'qualification.json').read_text())
                   assert report['status']=='PASS' and report['mode']==mode
                   assert report['usb_audio_underruns']==0
-                  metrics = {k:int(v) for k,v in (folder/'target-metrics.txt').read_text().strip().splitlines() for k,v in [k.split('=',1)]}
+                  metrics = parse_metrics((folder/'target-metrics.txt').read_text())
                   assert metrics['target_audio_blocks']>100
                   assert 0<metrics['target_audio_max_ticks']*44100<256*24000000
                   assert 0<metrics['emulated_main_stack_used']<24320-1024
