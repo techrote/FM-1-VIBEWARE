@@ -13,12 +13,13 @@
 <label>Sharing <input id="sharing" type="range" min="0" max="255" value="200"><output id="os">200</output></label>
 <label>Survival pressure <input id="pressure" type="range" min="0" max="255" value="40"><output id="op">40</output></label>
 <label><input id="frozen" type="checkbox"> Freeze ecological interactions (comparison)</label>
+
+<p>Environmental XY: fertility left to right, pressure top to bottom</p><div id="xy" aria-label="Environmental gesture surface"><span id="marker"></span></div>
 <fieldset><legend>Population Tide — optional live feedback</legend>
 <label><input id="feedback" type="checkbox" disabled> Steer living population automatically</label>
 <label>Population goal <input id="goal" type="range" min="1" max="8" value="5"><output id="goalValue">5</output></label>
 <p id="feedbackStatus">Manual environment. Enable during playback. Manual sliders, XY, freeze and stop override feedback.</p>
 <small>One bounded update per native audio block (10 Hz), one-agent dead band; this is an experimental controller, not a guarantee of survival.</small></fieldset>
-<p>Environmental XY: fertility left to right, pressure top to bottom</p><div id="xy" aria-label="Environmental gesture surface"><span id="marker"></span></div>
 <canvas id="habitat" width="640" height="360" aria-label="Four resource patches and eight possible agents"></canvas>
 <p><small>Bars: finite patch resource. Circles: living agents; size: energy, color: species, number: slot. Visualization follows completed audio blocks on the local playback clock.</small></p>
 <p id="stats"></p><p id="status" role="status">Ready. Start at low volume.</p>
