@@ -61,6 +61,20 @@ with Server(("127.0.0.1",0),Handler) as s:
         post("/block",block(d,2),409)
         e=session()
         assert post("/block",block(e,1))==first
+        # Same core and seed, with a live mask-only rhythmic intervention.
+        def phrase(mask):
+            token=session()
+            prefix=[post("/block",block(token,i)) for i in range(1,5)]
+            suffix=[post("/block",block(token,i,patterns=[[7,mask],[5,21],[11,1321]])) for i in range(5,45)]
+            return prefix,suffix
+        orig=phrase(73)
+        rotated=phrase(19)
+        spread=phrase(41)
+        assert orig[0]==rotated[0]==spread[0]
+        assert rotated==phrase(19) and spread==phrase(41)
+        counts=[sum(a!=b for x,y in zip(orig[1],p[1]) for a,b in zip(samples(x),samples(y))) for p in (rotated,spread)]
+        assert all(counts),counts
+        print("Live pattern-only intervention changed samples (rotate, spread):",counts)
         print("Live HTTP PASS: 48,000-frame intervention, exact reset/replay, phase-preserving pause, panic, expiry, invalid profile/pattern, stale and duplicate rejection")
     finally:
         s.shutdown();t.join()

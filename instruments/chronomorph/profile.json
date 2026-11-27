@@ -3,7 +3,7 @@
   "version": 1,
   "status": "provisional local semantics; not a wire protocol",
   "intendedTier": "basic MIDI clock/controls where verified; enhanced pattern editing and clock telemetry where supported",
-  "verifiedTier": "native standalone core and offline HTTP fixture; persistent local fixture candidate (see CI)",
+  "verifiedTier": "native standalone core and persistent local fixture, author browser CI and independent native package qualified at predecessor be57d9f; new edits pending exact CI",
   "sampleRate": 24000,
   "parameters": [
     {
@@ -54,7 +54,8 @@
         "length": 11,
         "mask": 1321
       }
-    ]
+    ],
+    "editing": "local reversible cyclic rotation and evenly spaced density fill; resulting length/mask only, no new wire command"
   },
   "events": [
     "start",

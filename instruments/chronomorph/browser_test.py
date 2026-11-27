@@ -31,6 +31,38 @@ with Server(("127.0.0.1",0),Handler) as s:
             page.get_by_role("button",name="Start / resume",exact=True).click()
             page.wait_for_function("window.witness.nonzero>=4 && document.querySelectorAll('.current').length===3")
             assert page.evaluate("window.witness.rate")==24000
+            # Exhaustive native browser JS invariants, including all 16-step masks.
+            result=page.evaluate("""() => {
+                let rotations=0, spreads=0;
+                for(let n=1;n<=16;n++){
+                    const limit=(1<<n)-1;
+                    for(let m=0;m<=limit;m++){
+                        const r=rotatePattern(m,n,1);
+                        if(r<0||r>limit||rotatePattern(r,n,-1)!==m)throw Error('rotation');
+                        rotations++;
+                    }
+                    for(let k=0;k<=n;k++){
+                        const m=spreadPattern(n,k),p=[];
+                        for(let j=0;j<n;j++)if((m>>j)&1)p.push(j);
+                        if(m<0||m>limit||p.length!==k)throw Error('density');
+                        if(k){const g=p.map((v,i)=>(p[(i+1)%k]-v+n)%n||n);
+                            if(Math.max(...g)-Math.min(...g)>1)throw Error('spacing')}
+                        spreads++;
+                    }
+                }
+                return [rotations,spreads];
+            }""")
+            assert result==[131070,152],result
+            # Observe real native HTTP responses for mid-performance pattern edits.
+            def pattern_response(mask):
+                return lambda r: r.url.endswith("/block") and r.status==200 and r.request.post_data_json["patterns"][0]==[7,mask]
+            with page.expect_response(pattern_response(19)):
+                page.get_by_role("button",name="Bass / master Rotate right",exact=True).click()
+            assert page.locator("#lane0 button.on").count()==3
+            page.get_by_role("spinbutton",name="Bass / master hits",exact=True).fill("3")
+            with page.expect_response(pattern_response(41)):
+                page.get_by_role("button",name="Bass / master Spread hits",exact=True).click()
+            assert page.locator("#lane0 button.on").count()==3
             page.locator("#warp").fill("-60")
             page.locator("#bpm").fill("220")
             page.locator("#lane0 button").first.click()
