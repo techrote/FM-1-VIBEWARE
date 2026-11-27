@@ -23,8 +23,8 @@ with http.server.HTTPServer(('127.0.0.1',0),Handler) as s:
     try:
         assert b'Chronomorph' in urllib.request.urlopen(root+'/',timeout=5).read()
         a=get(q); assert get(q)==a; assert get(dict(q,warp=0))!=a; assert get(dict(q,mask0=0))!=a
-        for bad in (dict(q,warp=61),dict(q,mask0=128),dict(q,seconds=21),dict(q,unknown=1)):
+        for bad in (dict(q,warp=61),dict(q,mask0=128),dict(q,seconds=21),dict(q,unknown=1),dict(q,seed=99999999999999999999999999)):
             try: get(bad); raise AssertionError('invalid accepted')
             except urllib.error.HTTPError as e: assert e.code==400
-        print('real HTTP: deterministic PCM, warp/edit contrast, 4 invalid requests PASS')
+        print('real HTTP: deterministic PCM, warp/edit contrast, 5 invalid requests PASS')
     finally: s.shutdown(); t.join()

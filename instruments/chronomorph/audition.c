@@ -1,5 +1,6 @@
 #include "chrono.h"
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +31,7 @@ static void test(void){
     cm_start(&a);cm_render(&a,x,257);assert(a.playing);cm_reset(&a,0,2);cm_render(&a,x,257);for(unsigned j=0;j<257;j++)assert(x[j]==0);
     puts("transport, edit, tempo, invalid bounds, mute: PASS");
 }
-static int num(const char *s,long lo,long hi,long *v){char *end;long n=strtol(s,&end,10);if(!*s||*end||n<lo||n>hi)return 0;*v=n;return 1;}
+static int num(const char *s,long lo,long hi,long *v){char *end;errno=0;long n=strtol(s,&end,10);if(errno==ERANGE||!*s||*end||n<lo||n>hi)return 0;*v=n;return 1;}
 int main(int argc,char **argv){
     if(argc==2&&!strcmp(argv[1],"--test")){test();return 0;}
     if(argc!=15||strcmp(argv[1],"--render")){fputs("--render PATH PRESET SEED BPM WARP VARIATION SECONDS LEN0 MASK0 LEN1 MASK1 LEN2 MASK2\n",stderr);return 2;}
