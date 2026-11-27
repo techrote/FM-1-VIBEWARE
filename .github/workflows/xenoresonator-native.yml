@@ -1,0 +1,48 @@
+name: Xenoresonator native audition
+on:
+  push:
+    paths:
+      - 'instruments/xenoresonator/**'
+      - '.github/workflows/xenoresonator-native.yml'
+  pull_request:
+    paths:
+      - 'instruments/xenoresonator/**'
+      - '.github/workflows/xenoresonator-native.yml'
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: instruments/xenoresonator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build and test
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c test.c -o test.exe
+          ./test.exe
+          gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c render.c -o render.exe
+          python test_http.py ./render.exe
+      - name: Create audition package and PCM receipts
+        run: |
+          mkdir -p 'audition package'
+          cp render.exe audition.py test_http.py README.md profile.json xeno.c xeno.h test.c render.c 'audition package/'
+          for p in 0 1 2 3; do ./render.exe "audition package/material$p.wav" "$p" 76 12 90 48 110 phrase; done
+          ./render.exe 'audition package/uncoupled.wav' 2 76 12 0 48 110 phrase
+          cd 'audition package'
+          python -c "import wave,glob,hashlib; print('\n'.join(p+' '+hashlib.sha256(wave.open(p).readframes(144000)).hexdigest() for p in sorted(glob.glob('*.wav'))))" > PCM-SHA256.txt
+          python test_http.py ./render.exe
+          git rev-parse HEAD > SOURCE-REVISION.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-${{ matrix.os }}
+          path: instruments/xenoresonator/audition package/
+          if-no-files-found: error

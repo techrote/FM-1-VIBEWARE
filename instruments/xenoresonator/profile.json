@@ -1,0 +1,79 @@
+{
+  "schema": "provisional-local-semantic-profile/1",
+  "instrument": "xenoresonator",
+  "version": 1,
+  "standalone": true,
+  "intended_tier": "basic MIDI if verified; enhanced local state where supported",
+  "verified_tier": "native local core and localhost audition only",
+  "wire_ids": null,
+  "parameters": [
+    {
+      "id": "material",
+      "type": "enum",
+      "values": [
+        "Ceramic",
+        "Woodglass",
+        "Alien metal",
+        "Membrane"
+      ],
+      "default": 0
+    },
+    {
+      "id": "excitation",
+      "min": 0,
+      "max": 127,
+      "default": 76
+    },
+    {
+      "id": "damping",
+      "min": 0,
+      "max": 127,
+      "default": 38
+    },
+    {
+      "id": "coupling",
+      "min": 0,
+      "max": 127,
+      "default": 48
+    }
+  ],
+  "xy": {
+    "x": "excitation",
+    "y": "damping"
+  },
+  "events": [
+    {
+      "id": "strike",
+      "note": [
+        36,
+        84
+      ],
+      "velocity": [
+        1,
+        127
+      ]
+    },
+    {
+      "id": "release"
+    },
+    {
+      "id": "panic"
+    }
+  ],
+  "telemetry": [
+    {
+      "id": "mode_level",
+      "count": 6,
+      "min": 0,
+      "max": 131070,
+      "source": "local core |re|+|im| magnitude proxy; not device telemetry"
+    }
+  ],
+  "unsupported": [
+    "verified MIDI mapping",
+    "physical transport",
+    "negotiated device telemetry",
+    "preset persistence",
+    "clock"
+  ]
+}
