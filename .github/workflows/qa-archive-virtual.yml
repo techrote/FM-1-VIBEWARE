@@ -1,0 +1,96 @@
+name: QA exact Ecophon archive and independent virtual target
+on:
+  pull_request:
+    paths: ['qualification/**','catalogue/**','.github/workflows/qa-archive-virtual.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  ecophon-archive:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: 15220716890
+            digest: 5eb6eaf47d89ba8df41fc9d802160d3a6b22aa55cd67efc6d1cb3efc743b7d64
+          - os: windows-latest
+            artifact: 15221151301
+            digest: a3b71964bab66df8eff0b537b5171706ea0baf57171435f2b367717a2f356974
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: acdc41839665271372cd69df1d09f5550556c87e
+          path: frozen-ecophon
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download original author archive by immutable ID and run independent tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ matrix.artifact }}
+          ARCHIVE_SHA256: ${{ matrix.digest }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-ecophon rev-parse HEAD)" = acdc41839665271372cd69df1d09f5550556c87e
+          mkdir -p receipts
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > original.zip
+          python -m py_compile qualification/ecophon_archive.py
+          python qualification/ecophon_archive.py frozen-ecophon original.zip "$ARCHIVE_SHA256" | tee receipts/ecophon.log
+          tail -n 1 receipts/ecophon.log > receipts/ecophon.json
+          python -c "import json; json.load(open('receipts/ecophon.json'))"
+          gcc --version > receipts/compiler.txt
+          git -C frozen-ecophon rev-parse HEAD > receipts/source.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-ecophon-${{ matrix.os }}
+          path: receipts/
+  virtual:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 4133787e51010581c9ed594db7e57b9506894c84
+          path: frozen-platform
+          persist-credentials: false
+      - name: Independently validate original published virtual evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p receipts original-evidence
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15218964969/zip" > original-virtual.zip
+          echo '42a2412256f724f42e6f78f3caefc7faee55fe9dc4e51d98de4676509a930fed  original-virtual.zip' | sha256sum -c -
+          unzip -q original-virtual.zip -d original-evidence
+          python3 qualification/virtual_pcm.py original-evidence | tee receipts/original-virtual.json
+      - name: Fresh target build and actual emulator reproduction using shared PLATFORM tools
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-platform rev-parse HEAD)" = 4133787e51010581c9ed594db7e57b9506894c84
+          bash frozen-platform/platform/emulator/ci.sh
+          python3 qualification/virtual_pcm.py frozen-platform/platform-results | tee receipts/rebuilt-virtual.json
+          cmp receipts/original-virtual.json receipts/rebuilt-virtual.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-independent-virtual-evidence
+          path: |
+            receipts/
+            frozen-platform/platform-results/
+          if-no-files-found: warn
