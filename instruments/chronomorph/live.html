@@ -3,7 +3,7 @@
 <h1>Chronomorph — live clocks</h1><p>Actual local native engine. Edit patterns and warp while playing. Clock markers are sampled local state, not device telemetry.</p>
 <label>Composition <select id="preset"><option>Glass Lattice</option><option>Broken Meridian</option><option>Slow Eclipse</option></select></label>
 <label>BPM <input id="bpm" type="number" min="40" max="220"></label><label>Warp <input id="warp" type="number" min="-60" max="60"></label><label>Variation <input id="variation" type="number" min="0" max="100" value="12"></label><label>Seed <input id="seed" type="number" min="1" max="2147483647" value="17"></label>
-<div id="lanes"></div><button id="start">Start / resume</button> <button id="pause">Pause</button> <button id="reset">Reset composition</button> <button id="panic">Panic / disconnect</button><output id="status" aria-live="polite">Stopped</output>
+<div id="lanes"></div><fieldset><legend>Performance scenes</legend><p>Capture tempo, warp, variation and all three patterns; recall without restarting clocks. Four in-memory slots, cleared on reload. Seed, preset and transport are not recalled.</p><div id="scenes"></div><output id="sceneStatus" aria-live="polite">No scene saved</output></fieldset><button id="start">Start / resume</button> <button id="pause">Pause</button> <button id="reset">Reset composition</button> <button id="panic">Panic / disconnect</button><output id="status" aria-live="polite">Stopped</output>
 <script>
 const $=id=>document.getElementById(id), presets=[[112,24,[7,5,11],[73,21,1321]],[142,-32,[5,9,7],[21,297,85]],[84,48,[9,7,13],[293,73,4693]]];
 let lens=[],masks=[],token=null,seq=0,gen=0,playEpoch=0,playing=0,ctx=null,next=0,sources=new Set(),visual=[],timer=null,inflight=null;
@@ -16,6 +16,28 @@ const action=(label,run)=>{const b=document.createElement('button');b.type='butt
 f.append(' Hits ',density,' ',action('Spread hits',()=>{const k=Math.max(0,Math.min(lens[i],Math.round(Number(density.value))||0));masks[i]=spreadPattern(lens[i],k)}),' ',action('Rotate left',()=>{masks[i]=rotatePattern(masks[i],lens[i],-1)}),' ',action('Rotate right',()=>{masks[i]=rotatePattern(masks[i],lens[i],1)}));const row=document.createElement('div');row.className='steps';row.id='lane'+i;for(let j=0;j<lens[i];j++){const b=document.createElement('button');b.textContent=j+1;b.className=(masks[i]>>j)&1?'on':'';b.setAttribute('aria-pressed',String(!!((masks[i]>>j)&1)));b.onclick=()=>{masks[i]^=1<<j;grid()};row.append(b)}f.append(row);$('lanes').append(f)})}
 function load(){const p=presets[$('preset').selectedIndex];$('bpm').value=p[0];$('warp').value=p[1];lens=p[2].slice();masks=p[3].slice();grid()}
 load();
+function makeSceneBank(){
+  const slots=Array(4).fill(null);
+  function copy(s){return {bpm:s.bpm,warp:s.warp,variation:s.variation,patterns:s.patterns.map(p=>p.slice())}}
+  function valid(s){
+    const int=(v,a,b)=>Number.isInteger(v)&&v>=a&&v<=b;
+    return s&&int(s.bpm,40,220)&&int(s.warp,-60,60)&&int(s.variation,0,100)&&Array.isArray(s.patterns)&&s.patterns.length===3&&s.patterns.every(p=>Array.isArray(p)&&p.length===2&&int(p[0],1,16)&&int(p[1],0,(1<<p[0])-1));
+  }
+  function index(i){if(!Number.isInteger(i)||i<0||i>=4)throw new RangeError("scene slot")}
+  return {
+    save(i,s){index(i);if(!valid(s))throw new RangeError("scene controls");slots[i]=copy(s)},
+    recall(i){index(i);return slots[i]===null?null:copy(slots[i])}
+  }
+}
+const sceneBank=makeSceneBank();
+function sceneControls(){return {bpm:clamp('bpm',40,220),warp:clamp('warp',-60,60),variation:clamp('variation',0,100),patterns:lens.map((n,i)=>[n,masks[i]])}}
+for(let i=0;i<4;i++){
+  const save=document.createElement('button'),recall=document.createElement('button'),name='Scene '+(i+1);
+  save.type=recall.type='button';save.textContent='Save '+name;recall.textContent='Recall '+name;recall.disabled=true;
+  save.onclick=()=>{sceneBank.save(i,sceneControls());recall.disabled=false;$('sceneStatus').textContent=name+' saved'};
+  recall.onclick=()=>{const s=sceneBank.recall(i);if(!s)return;$('bpm').value=s.bpm;$('warp').value=s.warp;$('variation').value=s.variation;lens=s.patterns.map(p=>p[0]);masks=s.patterns.map(p=>p[1]);grid();$('sceneStatus').textContent=name+' recalled (clock and transport unchanged)'};
+  $('scenes').append(save,recall,document.createTextNode(' '));
+}
 async function request(path,q,signal){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q),signal});if(!r.ok)throw Error('Session rejected: '+r.status);return r.json()}
 function clearAudio(){for(const s of sources){try{s.stop()}catch{}}sources.clear();visual=[];next=ctx?ctx.currentTime:0;for(let i=0;i<3;i++)for(const b of $('lane'+i).children)b.classList.remove('current')}
 function disconnect(){gen++;playEpoch++;playing=0;clearTimeout(timer);if(inflight)inflight.abort();inflight=null;clearAudio();const old=token;token=null;if(old)request('/panic',{token:old}).catch(()=>{});$('status').textContent='Stopped / disconnected'}
@@ -25,7 +47,7 @@ async function pump(g){if(g!==gen||!token)return;try{
   while(visual.length&&visual[0].time<=ctx.currentTime){const v=visual.shift();v.lanes.forEach((l,i)=>{[...$('lane'+i).children].forEach((b,j)=>b.classList.toggle('current',j===l[0]&&v.playing))});$('status').textContent=(v.playing?'Playing':'Paused')+' | ticks / hits: '+v.lanes.map(l=>l[1]+'/'+l[2]).join(' · ')}
   if(next-ctx.currentTime<.075&&sources.size<3&&visual.length<3){
     const active=playing,epoch=playEpoch,controller=new AbortController();inflight=controller;
-    const r=await request('/block',{token,seq:++seq,bpm:clamp('bpm',40,220),warp:clamp('warp',-60,60),variation:clamp('variation',0,100),playing:active,patterns:lens.map((n,i)=>[n,masks[i]])},controller.signal);
+    const r=await request('/block',{token,seq:++seq,...sceneControls(),playing:active},controller.signal);
     if(g!==gen)return;inflight=null;
     if(r.seq!==seq)throw Error('Sequence mismatch');
     if(epoch===playEpoch&&active===playing){const raw=atob(r.pcm);if(raw.length!==2400)throw Error('PCM size');const b=ctx.createBuffer(1,1200,24000),a=b.getChannelData(0);for(let i=0;i<1200;i++){let v=raw.charCodeAt(2*i)|(raw.charCodeAt(2*i+1)<<8);a[i]=(v>=32768?v-65536:v)/32768}

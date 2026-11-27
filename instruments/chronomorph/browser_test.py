@@ -63,6 +63,35 @@ with Server(("127.0.0.1",0),Handler) as s:
             with page.expect_response(pattern_response(41)):
                 page.get_by_role("button",name="Bass / master Spread hits",exact=True).click()
             assert page.locator("#lane0 button.on").count()==3
+            # Capture/recall applies a complete control frame to the existing session.
+            assert page.get_by_role("button",name="Recall Scene 1",exact=True).is_disabled()
+            page.get_by_role("button",name="Save Scene 1",exact=True).click()
+            page.locator("#bpm").fill("180")
+            page.locator("#warp").fill("-48")
+            page.locator("#variation").fill("64")
+            with page.expect_response(pattern_response(82)):
+                page.get_by_role("button",name="Bass / master Rotate right",exact=True).click()
+            page.get_by_role("button",name="Save Scene 2",exact=True).click()
+            def scene_response(bpm,warp,variation,mask):
+                return lambda r: r.url.endswith("/block") and r.status==200 and all(
+                    r.request.post_data_json[k]==v for k,v in dict(
+                        bpm=bpm,warp=warp,variation=variation,playing=1,
+                        patterns=[[7,mask],[5,21],[11,1321]]).items())
+            with page.expect_response(scene_response(112,24,12,41)) as first_scene:
+                page.get_by_role("button",name="Recall Scene 1",exact=True).click()
+            with page.expect_response(scene_response(180,-48,64,82)) as second_scene:
+                page.get_by_role("button",name="Recall Scene 2",exact=True).click()
+            a,b=first_scene.value,second_scene.value
+            assert a.request.post_data_json["token"]==b.request.post_data_json["token"]
+            assert b.json()["seq"]>a.json()["seq"]
+            assert all(y[1]>=x[1] for x,y in zip(a.json()["lanes"],b.json()["lanes"]))
+            assert page.locator("#sceneStatus").inner_text().startswith("Scene 2 recalled")
+            assert page.locator("#lane0 button.on").count()==3
+            page.get_by_role("button",name="Pause",exact=True).click()
+            with page.expect_response(lambda r:r.url.endswith("/block") and r.status==200 and
+                    r.request.post_data_json["playing"]==0 and r.request.post_data_json["bpm"]==112):
+                page.get_by_role("button",name="Recall Scene 1",exact=True).click()
+            page.get_by_role("button",name="Start / resume",exact=True).click()
             page.locator("#warp").fill("-60")
             page.locator("#bpm").fill("220")
             page.locator("#lane0 button").first.click()

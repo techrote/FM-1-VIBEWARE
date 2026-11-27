@@ -55,7 +55,8 @@
         "mask": 1321
       }
     ],
-    "editing": "local reversible cyclic rotation and evenly spaced density fill; resulting length/mask only, no new wire command"
+    "editing": "local reversible cyclic rotation and evenly spaced density fill; resulting length/mask only, no new wire command",
+    "scenes": "Four local volatile scene slots capture BPM/warp/variation and all length/mask pairs. Recall atomically at next local block, preserving session, transport, seed and clocks; no wire command."
   },
   "events": [
     "start",
