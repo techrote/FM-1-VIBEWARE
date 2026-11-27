@@ -6,7 +6,20 @@
   "standalone": {
     "core": "Orbit",
     "required_companion": false,
-    "target_status": "not run"
+    "target_status": "Linux virtual-target PASS; independent QA rerun PASS; physical HOLD",
+    "virtual_evidence": {
+      "platform_revision": "4133787e51010581c9ed594db7e57b9506894c84",
+      "author_run": "https://github.com/techrote/FM-1-VIBEWARE/actions/runs/46039864752",
+      "independent_run": "https://github.com/techrote/FM-1-VIBEWARE/actions/runs/46045927224",
+      "panel": {
+        "note_keys": "pitch",
+        "K1": "material_y",
+        "SEL": "material preset",
+        "PLAY": "gate toggle",
+        "HOME": "panic"
+      },
+      "scope": "standalone FM-1 emulation only; not companion transport"
+    }
   },
   "companion": {
     "intended_tier": "enhanced where verified; basic MIDI fallback",

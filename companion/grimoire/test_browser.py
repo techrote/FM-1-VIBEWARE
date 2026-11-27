@@ -41,8 +41,9 @@ def run(library, executable, screenshot):
                 first = page.evaluate('g')
                 # Tap the actual Web Audio output bus, not decoded HTTP bytes.
                 page.evaluate('''() => {window.meter=audio.createAnalyser();meter.fftSize=2048;
-                  bus.connect(meter);window.peak=()=>{const a=new Float32Array(meter.fftSize);
+                  bus.connect(meter);const sink=audio.createGain();sink.gain.value=0;meter.connect(sink);sink.connect(audio.destination);window.peak=()=>{const a=new Float32Array(meter.fftSize);
                   meter.getFloatTimeDomainData(a);return Math.max(...a.map(Math.abs))}}''')
+                page.evaluate('''() => {const original=draw; window.played=null; draw=d=>{window.played={x:d.x,y:d.y,gate:d.gate,preset:d.preset,source:d.state_source};original(d)}}''')
                 def silence():
                     page.evaluate('window.quietSince = null')
                     page.wait_for_function('''() => {if(peak() >= .0001){quietSince=null;return false}
@@ -55,7 +56,7 @@ def run(library, executable, screenshot):
                     page.mouse.move(box['x'] + box['width']*.8, box['y'] + box['height']*.75, steps=12)
                     page.wait_for_timeout(60)
                     page.mouse.move(box['x'] + box['width']*.82, box['y'] + box['height']*.76)
-                    page.wait_for_function('visuals.some(v=>v.state.x>85)')
+                    page.wait_for_function('played && played.x>85 && played.y<45 && played.gate===1 && played.source==="local native core"')
                     assert page.evaluate('visuals.length <= 8 && sources.size <= 8')
                 silence()
                 gesture()
@@ -65,7 +66,7 @@ def run(library, executable, screenshot):
                 page.wait_for_function('status.textContent.endsWith("release")')
                 silence()
                 page.locator('[data-p="2"]').click()
-                page.wait_for_function('status.textContent.includes("Abyss")')
+                page.wait_for_function('played && played.preset===2 && status.textContent.includes("Abyss")')
                 gesture()
                 page.evaluate('document.querySelector("#panic").click()')
                 page.mouse.up()

@@ -8,8 +8,9 @@ on:
 jobs:
   native:
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -34,13 +35,22 @@ jobs:
           python out/smoke.py out/orbit.$ext
           node out/test_gesture.cjs
           node out/test_visual.cjs
+      - name: Execute staged package from a path with spaces
+        run: |
+          mkdir -p "extracted Orbit Gate"
+          cp -R out/. "extracted Orbit Gate/"
+          cd "extracted Orbit Gate"
+          if [ "$RUNNER_OS" = Windows ]; then ext=dll; else ext=so; fi
+          python smoke.py "orbit.$ext"
+          node test_gesture.cjs
+          node test_visual.cjs
       - name: Real Chromium playback and fault integration
         if: runner.os == 'Linux'
         timeout-minutes: 8
         run: |
           python -m pip install playwright==1.57.0
           python -m playwright install --with-deps chromium
-          python out/test_browser.py out/orbit.so --screenshot out/orbit-gate.png
+          python "extracted Orbit Gate/test_browser.py" "extracted Orbit Gate/orbit.so" --screenshot out/orbit-gate.png
       - uses: actions/upload-artifact@v4
         with:
           name: grimoire-${{ matrix.os }}
