@@ -1,0 +1,130 @@
+name: QA independent Ecophon and Chronomorph virtual reproduction
+on:
+  pull_request:
+    paths: ['.github/workflows/qa-downstream-virtual.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  downstream:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 94a2ffe7673ca2e21cd2bddfb879d42eb78e456b
+          path: frozen-platform
+          persist-credentials: false
+      - name: Validate frozen author ZIP and independent causal PCM gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p receipts original
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15229850685/zip" > original.zip
+          echo '732ac82a0d9087e069dce4bd93b99c2885179a5a9c857c11c29886998b7b2f38  original.zip' | sha256sum -c -
+          python3 - <<'PY'
+          import stat, zipfile
+          from pathlib import PurePosixPath
+          with zipfile.ZipFile("original.zip") as z:
+              seen=set()
+              total=0
+              for i in z.infolist():
+                  p=PurePosixPath(i.filename)
+                  assert not p.is_absolute() and '..' not in p.parts and '\\' not in i.filename
+                  assert not stat.S_ISLNK(i.external_attr >> 16)
+                  assert str(p) not in seen
+                  seen.add(str(p))
+                  total+=i.file_size
+                  assert total<64*1024*1024
+                  assert i.is_dir() or p.suffix in ('.txt','.json','.log','.map','.wav','.bmp'), p
+              z.extractall("original")
+          PY
+          cat > inspect_virtual.py <<'PY'
+          import array, hashlib, json, sys, wave
+          from pathlib import Path
+          ROOT=Path(sys.argv[1])
+          HASHES={
+              'scope-reference':'7bc82e8e554a31635f830358ac01539fad08796b7636af85521fbdfe5437104b',
+              'orbit-n3':'dad86d9af4128a0150ff15ee5d3b70f4951c97efeb73dc19eada744cc11865b1',
+              'orbit-n3-repeat':'dad86d9af4128a0150ff15ee5d3b70f4951c97efeb73dc19eada744cc11865b1',
+              'orbit-n3-uc25':'dad86d9af4128a0150ff15ee5d3b70f4951c97efeb73dc19eada744cc11865b1',
+              'orbit-n9':'922ff1e716e81bcbc9a17b982c7bd01382babfa9cf9461bd51e2161eca03ba33',
+              'eco-low':'12e783e705e4eab97cb1d86c6a2834a8269d49107104a3419924e6dc907a6b3f',
+              'eco-low-repeat':'12e783e705e4eab97cb1d86c6a2834a8269d49107104a3419924e6dc907a6b3f',
+              'eco-high':'5b2cee357e35deeb094fbf438c7a52ac8c3eecd38290f23876cd14ab1838bfe1',
+              'eco-scarcity':'7e95070c4261c2a309029f9f0e411ff8d45f70de34e3616c2b7645f34439d7cb',
+              'eco-scarcity-repeat':'7e95070c4261c2a309029f9f0e411ff8d45f70de34e3616c2b7645f34439d7cb',
+              'chrono-low':'4f68dd1d0f1b38b1bb74e60ec9b65612fdc412a7aae119ab80de0457a5ea8522',
+              'chrono-low-repeat':'4f68dd1d0f1b38b1bb74e60ec9b65612fdc412a7aae119ab80de0457a5ea8522',
+              'chrono-warp':'bacde158c5a71de34684be4e9e9cbbb4e3eed6a9f3fce5c4d13e8127a7d3b489',
+              'chrono-preset':'f053c5fc3d81d9550440ba8d0cbef8172c4df36712edbc8d06ce5ea6dc8aa9e8',
+              'chrono-preset-repeat':'f053c5fc3d81d9550440ba8d0cbef8172c4df36712edbc8d06ce5ea6dc8aa9e8',
+              'chrono-tempo':'10e32a002451dd638c4a9b8fce0653f179f6350eebc05ba59791d17cab866c6c',
+          }
+          pins=dict(line.split('=',1) for line in (ROOT/'pins.txt').read_text().splitlines())
+          assert pins['platform']=='94a2ffe7673ca2e21cd2bddfb879d42eb78e456b'
+          assert pins['emu']=='736aded65c8e2e9d652cf595fca248734483a877'
+          assert pins['mhac']=='cc132a43b27c1d9f23bf50bca224567af49e208e'
+          assert pins['dinghy']=='92f17b28f2d05f2f78fd1b160b58475d518902c8'
+          assert pins['ecophon_core']=='acdc41839665271372cd69df1d09f5550556c87e'
+          assert pins['chronomorph_core']=='be57d9f77e9325271adbd4558dfd554c6cd81e19'
+          assert {p.stem for p in ROOT.glob('*.wav')}==HASHES.keys()
+          out={'pins':pins,'wav':{},'xip':{},'causal':{}}
+          pcm={}
+          for name,expected in HASHES.items():
+              path=ROOT/(name+'.wav')
+              digest=hashlib.sha256(path.read_bytes()).hexdigest()
+              assert digest==expected,(name,digest,expected)
+              with wave.open(str(path),'rb') as w:
+                  assert (w.getnchannels(),w.getsampwidth(),w.getframerate(),w.getnframes(),w.getcomptype())==(2,2,44100,179456,'NONE')
+                  raw=w.readframes(179456)
+              assert len(raw)==179456*4
+              s=array.array('h');s.frombytes(raw)
+              if sys.byteorder!='little': s.byteswap()
+              peak=max(map(abs,s))
+              assert 0<peak<32767 and any(raw[44100*4:132300*4]) and not any(raw[-22050*4:])
+              pcm[name]=raw
+              out['wav'][name]={'sha256':digest,'peak':peak,'frames':179456}
+          for name,size,digest in (
+              ('grimoire',54896,'87dab6dde563f4001eaa4c394dc54a3fecf180c4d1d7567c3926e5c1a2a72866'),
+              ('ecophon',55612,'de27bfac1b88b09939ddbbf0cad58568d47895ccbbab901a67edc06a843c37a2'),
+              ('chronomorph',55380,'89be1f38107906050d9ede9f096c6ebcff0b99a7b7a8d7e59d40e13693719798'),
+          ):
+              d=json.loads((ROOT/(name+'-xip.json')).read_text())
+              assert d['purpose']=='emulator-only' and d['bytes']==size and d['xip_sha256']==digest
+              assert (ROOT/(name+'.map')).stat().st_size>0
+              out['xip'][name]={'bytes':size,'sha256':digest,'purpose':'emulator-only'}
+          def contrast(a,b):
+              assert a[:44100*4]==b[:44100*4] and any(a[:44100*4]), 'prefix mismatch or silence'
+              x,y=a[92610*4:132300*4],b[92610*4:132300*4]
+              assert len(x)==len(y)==39690*4
+              changed=sum(x[i:i+4]!=y[i:i+4] for i in range(0,len(x),4))
+              assert changed>0
+              return changed
+          for a,b,count in [('eco-low','eco-scarcity',39679),('chrono-low','chrono-preset',39680),('chrono-low','chrono-tempo',39682)]:
+              changed=contrast(pcm[a],pcm[b])
+              assert changed==count,(a,b,changed,count)
+              out['causal'][b]=changed
+          assert pcm['eco-low']!=pcm['eco-high']
+          assert pcm['chrono-low']!=pcm['chrono-warp']
+          assert pcm['orbit-n3']!=pcm['orbit-n9']
+          print(json.dumps(out,sort_keys=True))
+          PY
+          python3 inspect_virtual.py original | tee receipts/original.json
+      - name: Rebuild and execute exact target using shared PLATFORM harness
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-platform rev-parse HEAD)" = 94a2ffe7673ca2e21cd2bddfb879d42eb78e456b
+          bash frozen-platform/platform/emulator/ci.sh
+          python3 inspect_virtual.py frozen-platform/platform-results | tee receipts/rebuilt.json
+          cmp receipts/original.json receipts/rebuilt.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-independent-downstream-virtual-evidence
+          path: |
+            receipts/
+            frozen-platform/platform-results/
+          if-no-files-found: warn
