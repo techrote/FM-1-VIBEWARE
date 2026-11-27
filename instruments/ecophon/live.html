@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ecophon — habitat laboratory</title>
+<style>
+*{box-sizing:border-box}body{background:#101b20;color:#d8e8df;font:16px system-ui;margin:1rem auto;padding:1rem;max-width:800px}h1{font-size:1.8rem}button,select,input{accent-color:#75d1ae;font:inherit}button,select{background:#263b40;color:#fff;padding:.5rem;border:1px solid #486363;border-radius:.4rem}label{display:block;margin:.7rem 0}input[type=range]{width:60%;vertical-align:middle}canvas{width:100%;background:#15282c;border:1px solid #486363}small{color:#b5cbc1}#status{min-height:1.5em;color:#ffc58d}button:disabled{opacity:.5}
+</style>
+<h1>ECOPHON / habitat laboratory</h1>
+<p>Local native synthesis · ecological state, not FM-1 device telemetry.</p>
+<label>Regime <select id="preset"><option>Mutualism</option><option>Scarcity</option><option>Seasonal Bloom</option><option>Frozen comparator</option></select></label>
+<label>Seed <input id="seed" type="number" min="0" max="4294967295" value="42"></label>
+<button id="start">Start / reset habitat</button> <button id="stop">Panic / stop</button>
+<label>Fertility <input id="fertility" type="range" min="0" max="255" value="180"><output id="of">180</output></label>
+<label>Sharing <input id="sharing" type="range" min="0" max="255" value="200"><output id="os">200</output></label>
+<label>Survival pressure <input id="pressure" type="range" min="0" max="255" value="40"><output id="op">40</output></label>
+<label><input id="frozen" type="checkbox"> Freeze ecological interactions (comparison)</label>
+<canvas id="habitat" width="640" height="360" aria-label="Four resource patches and eight possible agents"></canvas>
+<p><small>Bars: finite patch resource. Circles: living agents; size: energy, color: species, number: slot. Visualization follows generated chunks, slightly ahead of playback.</small></p>
+<p id="stats"></p><p id="status" role="status">Ready. Start at low volume.</p>
+<script>
+"use strict";
+const $=id=>document.getElementById(id), names=["fertility","sharing","pressure"], outs=["of","os","op"];
+let ctx,gain,generation=0,epoch=0,next=0,timer=0,live=false,starting=false;
+const presets=[[180,200,40,0],[100,20,150,0],[230,90,85,0],[180,200,40,1]];
+function sliders(v){names.forEach((n,i)=>{$(n).value=v[i];$(outs[i]).textContent=v[i]});$("frozen").checked=!!v[3]}
+names.forEach((n,i)=>$(n).oninput=()=>$(outs[i]).textContent=$(n).value);
+$("preset").onchange=()=>sliders(presets[$("preset").selectedIndex]);
+async function post(path,data){
+ const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-Ecophon-Fixture":"1"},body:JSON.stringify(data)});
+ if(!r.ok)throw Error("request "+r.status);return r.json();
+}
+function draw(d){
+ const c=$("habitat"),g=c.getContext("2d");g.clearRect(0,0,640,360);g.font="14px system-ui";
+ for(let p=0;p<4;p++){
+  const x=(p%2)*320+10,y=Math.floor(p/2)*180+10;
+  g.fillStyle="#263b40";g.fillRect(x,y,300,160);g.fillStyle="#75d1ae";g.fillRect(x+8,y+24,284*d.resources[p]/4096,8);
+  g.fillStyle="#d8e8df";g.fillText("Patch "+(p+1)+" / "+d.resources[p],x+8,y+17);
+  let n=0;d.agents.forEach((a,i)=>{if(!a.alive||a.patch!==p)return;
+    let cx=x+35+(n%4)*74,cy=y+65+Math.floor(n/4)*55;n++;
+    g.fillStyle=a.species?"#d8a66a":"#75d1ae";g.beginPath();g.arc(cx,cy,6+16*a.energy/4096,0,2*Math.PI);g.fill();
+    g.fillStyle="#d8e8df";g.fillText(String(i+1),cx-4,cy+32);
+  });
+ }
+ $("stats").textContent="Ticks "+d.ticks+" · births "+d.births+" · deaths "+d.deaths+" · gifts "+d.gifts+" · migrations "+d.moves;
+}
+async function pump(e){
+ if(!live||e!==epoch)return;
+ if(next-ctx.currentTime>0.16){timer=setTimeout(()=>pump(e),25);return}
+ try{
+  const d=await post("/step",{generation,fertility:+$("fertility").value,sharing:+$("sharing").value,pressure:+$("pressure").value,frozen:+$("frozen").checked});
+  if(!live||e!==epoch)return;
+  const raw=atob(d.pcm);if(raw.length!==4800||d.rate!==24000||d.generation!==generation)throw Error("bad audio block");
+  const b=ctx.createBuffer(1,2400,24000),a=b.getChannelData(0);
+  for(let i=0;i<a.length;i++){let v=raw.charCodeAt(i*2)|(raw.charCodeAt(i*2+1)<<8);a[i]=(v>=32768?v-65536:v)/32768}
+  const src=ctx.createBufferSource();src.buffer=b;src.connect(gain);
+  next=Math.max(next,ctx.currentTime+0.015);src.start(next);next+=b.duration;
+  draw(d);timer=setTimeout(()=>pump(e),5);
+ }catch(err){if(e===epoch){stop();$("status").textContent="Stopped: "+err.message}}
+}
+function stop(){
+ ++epoch;live=false;clearTimeout(timer);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
+ const old=generation;generation=0;if(old)post("/panic",{generation:old}).catch(()=>{});
+ $("status").textContent="Stopped / locally muted.";
+}
+$("stop").onclick=stop;
+$("start").onclick=async()=>{
+ if(starting)return;stop();const e=epoch;starting=true;$("start").disabled=true;
+ try{
+  if(!ctx)ctx=new (window.AudioContext||window.webkitAudioContext)();
+  await ctx.resume();if(e!==epoch)return;
+  const seed=+$("seed").value,preset=$("preset").selectedIndex;
+  if(!Number.isInteger(seed)||seed<0||seed>4294967295)throw Error("invalid seed");
+  const d=await post("/reset",{seed,preset});
+  if(e!==epoch){post("/panic",{generation:d.generation}).catch(()=>{});return}
+  generation=d.generation;sliders(d.controls);gain=ctx.createGain();gain.gain.value=0.55;gain.connect(ctx.destination);
+  live=true;next=ctx.currentTime+0.04;$("status").textContent="Playing native ecological model.";pump(e);
+ }catch(err){if(e===epoch){stop();$("status").textContent=err.message}}finally{starting=false;$("start").disabled=false}
+};
+window.addEventListener("pagehide",stop);
+</script></html>

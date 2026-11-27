@@ -1,0 +1,86 @@
+{
+  "schema": "ecophon-local-semantics-v0",
+  "instrument": "ecophon",
+  "version": 1,
+  "provisional": true,
+  "wire_protocol": null,
+  "tiers": {
+    "standalone": "native core verified; FM-1 target pending",
+    "basic_midi": "intended; mapping/transport not verified",
+    "enhanced": "intended; local core snapshot only"
+  },
+  "parameters": [
+    {
+      "id": "fertility",
+      "min": 0,
+      "max": 255,
+      "default": 180
+    },
+    {
+      "id": "sharing",
+      "min": 0,
+      "max": 255,
+      "default": 200
+    },
+    {
+      "id": "pressure",
+      "min": 0,
+      "max": 255,
+      "default": 40
+    },
+    {
+      "id": "frozen",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    }
+  ],
+  "presets": [
+    "Mutualism",
+    "Scarcity",
+    "Seasonal Bloom",
+    "Frozen comparator"
+  ],
+  "events": [
+    "reset(seed,preset)",
+    "panic"
+  ],
+  "telemetry": {
+    "source": "local native core only",
+    "read_only": true,
+    "patches": {
+      "count": 4,
+      "resource": [
+        0,
+        4096
+      ]
+    },
+    "agents": {
+      "count": 8,
+      "fields": [
+        "alive",
+        "patch",
+        "species",
+        "trait",
+        "energy"
+      ]
+    },
+    "counters": [
+      "ticks",
+      "births",
+      "deaths",
+      "gifts",
+      "moves",
+      "consumed"
+    ]
+  },
+  "xy": {
+    "x": "fertility",
+    "y": "pressure"
+  },
+  "unsupported": [
+    "verified physical MIDI",
+    "device discovery",
+    "FM-1 telemetry"
+  ]
+}
