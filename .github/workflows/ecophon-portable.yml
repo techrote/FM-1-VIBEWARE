@@ -41,8 +41,11 @@ jobs:
           mkdir -p audition
           for p in 0 1 2 3; do ./ecophon audition/$p.wav "$p" 42 30; done
           python -c "import hashlib,pathlib; expected=['6971486e4a5736a93cc1dda9ed4dc5675edf79f828de1e14a1fad70f2fc9ac88','e6c974d5988449d7880838223cc11a835ffba764ba67854e46558e2f12618b74','155158bdf0d51a2bed10948d9f1bf226d9f6c57e9b8f272c5c6ddcfb99e8bc7b','73e1093fb5103213af9f3ddccf52bce37ad1fbbb9aa5b3a1375c5c2cbcf3a41f']; actual=[hashlib.sha256(pathlib.Path(f'audition/{p}.wav').read_bytes()).hexdigest() for p in range(4)]; print(actual); assert actual==expected"
+          if [ "$RUNNER_OS" = Windows ]; then lib=ecof.dll; else lib=libecof.so; fi
+          python performance.py "$lib" audition/performances
+          python -c "import hashlib,pathlib; p=pathlib.Path('audition/performances'); expected={'habitat-arc':'83a249ae82900bfb9dce0c070318c5b9d91931195e1423dc25f362fe3e3f3f7e','steady-control':'a2c1e39b9c131b3c3640406c141c85e5d200a5c9e245e36970545e1f12620fc1','frozen-control':'702bdae98bd3fac7223cd05edd69e378ebcb2b45aa15e859a9ed8ca94f996ec1'}; actual={k:hashlib.sha256((p/(k+'.wav')).read_bytes()).hexdigest() for k in expected}; print(actual); assert actual==expected"
           cp ecophon* audition/
-          cp README.md fixture.c live.py live.html test_live.py test_browser.py profile.json audition/
+          cp README.md fixture.c live.py live.html test_live.py test_browser.py profile.json performance.py audition/
           if [ "$RUNNER_OS" = Windows ]; then cp ecof.dll audition/; else cp libecof.so audition/; fi
       - uses: actions/upload-artifact@v4
         with:
