@@ -33,6 +33,16 @@ jobs:
           python test_http.py ./render.exe
           gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC xeno.c live_bridge.c -o live.dll
           python test_live.py ./live.dll
+      - name: Actual-core material passage and causal coupling comparison
+        run: |
+          python material_passage.py ./live.dll 'material passage'
+          cp material_passage.py 'material passage/'
+          git rev-parse HEAD > 'material passage/SOURCE-REVISION.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-material-passage-${{ matrix.os }}
+          path: instruments/xenoresonator/material passage/
+          if-no-files-found: error
       - name: Create audition package and PCM receipts
         run: |
           mkdir -p 'audition package'
