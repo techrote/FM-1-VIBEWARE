@@ -36,7 +36,7 @@ jobs:
       - name: Create audition package and PCM receipts
         run: |
           mkdir -p 'audition package'
-          cp render.exe audition.py test_http.py README.md profile.json xeno.c xeno.h test.c render.c live.dll live.py live.html live_bridge.c test_live.py 'audition package/'
+          cp render.exe audition.py test_http.py README.md profile.json xeno.c xeno.h test.c render.c live.dll live.py live.html live_bridge.c test_live.py test_browser.py 'audition package/'
           for p in 0 1 2 3; do ./render.exe "audition package/material$p.wav" "$p" 76 12 90 48 110 phrase; done
           ./render.exe 'audition package/uncoupled.wav' 2 76 12 0 48 110 phrase
           cd 'audition package'
@@ -49,3 +49,25 @@ jobs:
           name: xenoresonator-${{ matrix.os }}
           path: instruments/xenoresonator/audition package/
           if-no-files-found: error
+
+  browser:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: instruments/xenoresonator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build native browser fixture in a path with spaces
+        run: |
+          mkdir -p 'browser audition'
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC xeno.c live_bridge.c -o 'browser audition/live.dll'
+          cp live.py live.html test_browser.py 'browser audition/'
+      - name: Install pinned Chromium test dependency
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Qualify actual browser audio and controls
+        run: python 'browser audition/test_browser.py' 'browser audition/live.dll'

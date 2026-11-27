@@ -14,7 +14,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function post(path,q){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q)});if(!r.ok)throw Error('HTTP '+r.status);return r.json();}
 function paint(levels){bars.forEach((b,i)=>b.style.height=Math.min(100,100*Math.sqrt(levels[i]/131070))+'%');}
 function stop(reason='Stopped'){
-  epoch++; active=false;pointer=null;events=[];visuals=[];for(const s of sources){try{s.stop();}catch{}}sources.clear();paint([0,0,0,0,0,0]);
+  epoch++; active=false;pointer=null;heldKey=null;events=[];visuals=[];for(const s of sources){try{s.stop();}catch{}}sources.clear();paint([0,0,0,0,0,0]);
   const old=token;token=null;if(old)post('/panic',{token:old}).catch(()=>{});
   $('strike').disabled=true;$('start').disabled=opening;$('status').textContent=reason;
 }
@@ -38,9 +38,12 @@ async function pump(g){try{while(active&&epoch===g){
 }}catch(e){if(g===epoch)stop('Connection lost — muted: '+e.message);}}
 function animate(){while(ctx&&visuals.length&&visuals[0].at<=ctx.currentTime)paint(visuals.shift().levels);requestAnimationFrame(animate);}animate();
 $('start').onclick=start;$('stop').onclick=()=>stop();
-let pointer=null;const strike=$('strike');strike.onpointerdown=e=>{if(pointer!==null||!active)return;pointer=e.pointerId;strike.setPointerCapture(pointer);queue(1);};
+let pointer=null,heldKey=null;const strike=$('strike');strike.onpointerdown=e=>{if(pointer!==null||heldKey!==null||!active)return;pointer=e.pointerId;strike.setPointerCapture(pointer);queue(1);};
 function release(e){if(e.pointerId!==pointer)return;pointer=null;queue(2);}strike.onpointerup=release;strike.onpointercancel=release;strike.onlostpointercapture=release;
-strike.onkeydown=e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();queue(1);}};strike.onkeyup=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();queue(2);}};
+function releaseKey(){if(heldKey===null)return;heldKey=null;queue(2);}
+strike.onkeydown=e=>{if(e.key!==' '&&e.key!=='Enter')return;e.preventDefault();if(e.repeat||heldKey!==null||pointer!==null||!active)return;heldKey=e.key;queue(1);};
+strike.onkeyup=e=>{if(e.key!==' '&&e.key!=='Enter')return;e.preventDefault();if(e.key===heldKey)releaseKey();};
+strike.onblur=releaseKey;
 function dot(){$('dot').style.left=Number($('e').value)/127*100+'%';$('dot').style.top=(1-Number($('d').value)/127)*100+'%';}dot();$('e').oninput=dot;$('d').oninput=dot;
 function xy(e){const r=$('xy').getBoundingClientRect(),clamp=v=>Math.max(0,Math.min(127,Math.round(v*127)));$('e').value=clamp((e.clientX-r.left)/r.width);$('d').value=clamp(1-(e.clientY-r.top)/r.height);dot();}
 $('xy').onpointerdown=e=>{$('xy').setPointerCapture(e.pointerId);xy(e);};$('xy').onpointermove=e=>{if($('xy').hasPointerCapture(e.pointerId))xy(e);};
