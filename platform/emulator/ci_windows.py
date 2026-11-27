@@ -1,4 +1,5 @@
 """Build and execute the same pinned targets natively on Windows, evidence only."""
+import argparse
 import hashlib
 import json
 import math
@@ -127,26 +128,97 @@ def build_target(name, work, dinghy, tc, results):
     return image, receipt
 
 
+PANEL_HEADER = b'P6\n1280 820\n255\n'
+PANEL_BYTES = 1280 * 820 * 3
+
+
+def clean_env():
+    # Prevent inherited emulator diagnostics, USB scripts, capture paths or
+    # timing overrides from contaminating either the witness or owner launch.
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith('FM1_')}
+    env['FM1_LCD_TIMED'] = '1'
+    return env
+
+
+def panel_digest(path):
+    require(path.stat().st_size == len(PANEL_HEADER) + PANEL_BYTES, 'wrong panel image size')
+    data = path.read_bytes()
+    require(data.startswith(PANEL_HEADER), 'wrong panel PPM header')
+    pixels = data[len(PANEL_HEADER):]
+    require(min(pixels) != max(pixels), 'blank panel image')
+    return hashlib.sha256(data).hexdigest()
+
+
+def panel_receipt(cwd, results, name):
+    # This is the upstream headless panel renderer, not a desktop GUI test.
+    film = cwd / 'panel frames'
+    expected = [film / f'{i:06}.ppm' for i in range(5)]
+    require(sorted(film.glob('*.ppm')) == expected, 'incomplete panel timeline')
+    paths = expected + [cwd / 'final.ppm']
+    digests = [panel_digest(p) for p in paths]
+    require(digests[0] != digests[2], 'panel never changed during performance')
+    for tag, p in [('active', paths[2]), ('muted', paths[-1])]:
+        shutil.copyfile(p, results / (name + '-panel-' + tag + '.ppm'))
+    (results / (name + '-panel.json')).write_text(json.dumps(dict(
+        kind='headless panel render, not desktop GUI',
+        frames=[dict(ms=i*1000, sha256=d) for i,d in enumerate(digests[:5])],
+        final_sha256=digests[-1], width=1280, height=820), indent=2))
+
+
+def live_args(live, image):
+    return [str(live), '--bin', str(image), '--entry', '0x02000120',
+            '--midi', 'none', '--flash-chip', 'p25q80']
+
+
 def target(name, work, dinghy, tc, results, linux, emu, live):
     image, receipt = build_target(name, work, dinghy, tc, results)
     original = json.loads((linux / (name + '-xip.json')).read_text())
     require((receipt['bytes'], receipt['xip_sha256']) == (original['bytes'], original['xip_sha256']), 'Windows XIP differs from same-run Linux build')
-    env = dict(os.environ, FM1_LCD_TIMED='1')
+    env = clean_env()
     for case, keys in CASES[name]:
         cwd = work / case; cwd.mkdir()
         wav = results / (case + '.wav')
         chip = 'uc25hq80' if case.endswith('-uc25') else 'p25q80'
         run([emu, '--bin', image, '--entry', '0x02000120', '--ms', '4500', '--keys', keys, '--flash-chip', chip, '--wav', wav, '--quiet'], cwd, results / (case + '.log'), env, 300)
         (results / (case + '-match.json')).write_text(json.dumps(check_wav(wav, linux / wav.name), indent=2))
+    live_witness(name, work, results, live, image)
+
+
+def live_witness(name, work, results, live, image):
     cwd = work / (name + ' native live'); cwd.mkdir()
+    env = clean_env()
     raw = cwd / 'bench.raw'
     metrics = results / (name + '-live.json')
-    live_env = dict(env, FM1_BENCH_KEYS='600:N3,700:N3^,900:PLAY,1000:PLAY^,3600:HOME,3700:HOME^', FM1_BENCH_WAV=str(raw), FM1_BENCH_JSON=str(metrics))
-    run([live, '--bin', image, '--entry', '0x02000120', '--bench', '4500', '--midi', 'none', '--flash-chip', 'p25q80'], cwd, results / (name + '-live.log'), live_env, 300)
+    live_env = dict(env, FM1_BENCH_KEYS='600:N3,700:N3^,900:PLAY,1000:PLAY^,3600:HOME,3700:HOME^', FM1_BENCH_WAV=str(raw), FM1_BENCH_JSON=str(metrics), FM1_BENCH_FRAMES='panel frames,1000', FM1_BENCH_PANEL='final.ppm')
+    run([*live_args(live, image), '--bench', '4500'], cwd, results / (name + '-live.log'), live_env, 300)
     pcm = raw.read_bytes()
     check_bench(json.loads(metrics.read_text()), pcm)
     with wave.open(str(results / (name + '-live.wav')), 'wb') as f:
         f.setparams((2, 2, 44100, 0, 'NONE', 'not compressed')); f.writeframes(pcm)
+    panel_receipt(cwd, results, name)
+
+
+def prepare(work, results):
+    archive = work / 'compiler.zip'
+    urllib.request.urlretrieve(URL, archive)
+    require(sha(archive) == TC, 'Windows compiler archive digest mismatch')
+    tcroot = work / 'compiler'; tcroot.mkdir()
+    with zipfile.ZipFile(archive) as z:
+        z.extractall(tcroot)  # fixed, digest-verified upstream archive
+    matches = list(tcroot.rglob('clang.exe'))
+    require(len(matches) == 1, 'ambiguous compiler layout')
+    tc = matches[0].parent
+    run([tc / 'clang.exe', '--version'], work, results / 'compiler.txt')
+    dinghy, emusrc = work / 'dinghy source', work / 'emulator source'
+    checkout('https://github.com/zvenson/dinghy.git', dinghy, DINGHY)
+    checkout('https://github.com/joakimeriksson/fm1-emu.git', emusrc, EMU)
+    run(['rustup', 'toolchain', 'install', '1.95.0', '--profile', 'minimal'], work, results / 'rustup.txt')
+    run(['rustup', 'run', '1.95.0', 'cargo', 'build', '--release', '--locked', '-p', 'fm1-emu', '-p', 'fm1-live'], emusrc, results / 'cargo.txt', timeout=1800)
+    emu, live = (emusrc / 'target/release' / (n + '.exe') for n in ('fm1-emu', 'fm1-live'))
+    run([emu, '--version'], work, results / 'fm1-emu-version.txt')
+    for exe in (emu, live):
+        run([tc / 'llvm-readobj.exe', '--coff-imports', exe], work, results / (exe.stem + '-imports.txt'))
+    return dinghy, tc, emu, live
 
 
 def main(linux, results):
@@ -158,25 +230,7 @@ def main(linux, results):
     (results / 'pins.json').write_text(json.dumps(dict(pins, windows_toolchain_archive_sha256=TC), indent=2))
     with tempfile.TemporaryDirectory(prefix='VIBEWARE Windows virtual ') as d:
         work = Path(d).resolve()
-        archive = work / 'compiler.zip'
-        urllib.request.urlretrieve(URL, archive)
-        require(sha(archive) == TC, 'Windows compiler archive digest mismatch')
-        tcroot = work / 'compiler'; tcroot.mkdir()
-        with zipfile.ZipFile(archive) as z:
-            z.extractall(tcroot)  # fixed, digest-verified upstream archive
-        matches = list(tcroot.rglob('clang.exe'))
-        require(len(matches) == 1, 'ambiguous compiler layout')
-        tc = matches[0].parent
-        run([tc / 'clang.exe', '--version'], work, results / 'compiler.txt')
-        dinghy, emusrc = work / 'dinghy source', work / 'emulator source'
-        checkout('https://github.com/zvenson/dinghy.git', dinghy, DINGHY)
-        checkout('https://github.com/joakimeriksson/fm1-emu.git', emusrc, EMU)
-        run(['rustup', 'toolchain', 'install', '1.95.0', '--profile', 'minimal'], work, results / 'rustup.txt')
-        run(['rustup', 'run', '1.95.0', 'cargo', 'build', '--release', '--locked', '-p', 'fm1-emu', '-p', 'fm1-live'], emusrc, results / 'cargo.txt', timeout=1800)
-        emu, live = (emusrc / 'target/release' / (n + '.exe') for n in ('fm1-emu', 'fm1-live'))
-        run([emu, '--version'], work, results / 'fm1-emu-version.txt')
-        for exe in (emu, live):
-            run([tc / 'llvm-readobj.exe', '--coff-imports', exe], work, results / (exe.stem + '-imports.txt'))
+        dinghy, tc, emu, live = prepare(work, results)
         statuses = {}
         for name in CORES:
             try:
@@ -189,7 +243,68 @@ def main(linux, results):
         require(all(s == 'PASS' for s in statuses.values()), 'one or more Windows virtual targets failed')
 
 
+CONTROLS = {
+    'grimoire': 'PLAY gate, note keys pitch, K1 material, SEL preset, HOME mute',
+    'ecophon': 'PLAY ecology, K1 fertility, K2 pressure, note keys pressure, SEL regime, HOME mute',
+    'chronomorph': 'PLAY transport, K1 tempo, K2 warp, K3 variation, SCL composition, HOME mute',
+}
+
+
+def play(name):
+    require(os.name == 'nt', 'Windows native host required')
+    print('Local source build only; emulator-only, NOT FLASHABLE. No MIDI or USB connection.', flush=True)
+    print('Instrument: ' + name + ' / core ' + CORES[name][1], flush=True)
+    print('Preparing pinned compiler, Dinghy and fm1-emu; network, Git, Rustup and native MSVC build tools required.', flush=True)
+    with tempfile.TemporaryDirectory(prefix='VIBEWARE owner virtual ') as d:
+        work = Path(d).resolve()
+        results = work / 'private evidence'; results.mkdir()
+        dinghy, tc, _, live = prepare(work, results)
+        image, receipt = build_target(name, work, dinghy, tc, results)
+        live_witness(name, work, results, live, image)
+        print('Local target smoke PASS; XIP SHA256 ' + receipt['xip_sha256'], flush=True)
+        print(CONTROLS[name] + '. Space = PLAY, 7 = HOME, Esc closes emulator.', flush=True)
+        print('Launching native graphical panel; owner audio-device and manual control evaluation required.', flush=True)
+        # No shell, no flash/USB/update switches, no inherited FM1_* variables,
+        # no --bench. Keep the locally built files alive until the window exits.
+        gui = work / 'owner panel'; gui.mkdir()
+        subprocess.run(live_args(live, image), cwd=gui, env=clean_env(), check=True)
+
+
 class Tests(unittest.TestCase):
+    def test_panel(self):
+        with tempfile.TemporaryDirectory(prefix='VIBEWARE panel fixture ') as d:
+            p = Path(d); film = p / 'panel frames'; film.mkdir()
+            out = p / 'evidence'; out.mkdir()
+            data = PANEL_HEADER + bytes([0, 32, 255]) * (1280 * 820)
+            changed = PANEL_HEADER + bytes([32, 0, 255]) * (1280 * 820)
+            for i in range(5):
+                (film / f'{i:06}.ppm').write_bytes(data if i < 2 else changed)
+            (p / 'final.ppm').write_bytes(data)
+            panel_receipt(p, out, 'test')
+            self.assertEqual((out / 'test-panel-active.ppm').read_bytes(), changed)
+            self.assertEqual((out / 'test-panel-muted.ppm').read_bytes(), data)
+            self.assertEqual(len(json.loads((out / 'test-panel.json').read_text())['frames']), 5)
+            for bad in (b'', b'P5' + data[2:], PANEL_HEADER + bytes(PANEL_BYTES)):
+                (p / 'final.ppm').write_bytes(bad)
+                with self.assertRaises(ValueError): panel_receipt(p, out, 'test')
+            (p / 'final.ppm').write_bytes(data)
+            (film / '000002.ppm').write_bytes(data)
+            with self.assertRaises(ValueError): panel_receipt(p, out, 'test')
+            (film / '000002.ppm').unlink()
+            with self.assertRaises(ValueError): panel_receipt(p, out, 'test')
+
+    def test_live_args(self):
+        a = live_args(Path('path with spaces/fm1-live.exe'), Path('path with spaces/virtual.xip.bin'))
+        self.assertEqual(a, ['path with spaces/fm1-live.exe'.replace('/', os.sep), '--bin',
+                            'path with spaces/virtual.xip.bin'.replace('/', os.sep), '--entry',
+                            '0x02000120', '--midi', 'none', '--flash-chip', 'p25q80'])
+        self.assertFalse(set(a) & {'--flash', '--fwsc', '--fw', '--usb', '--bench'})
+        from unittest.mock import patch
+        with patch.dict(os.environ, {'FM1_USB_SEND':'unexpected', 'fm1_bench_wav':'unexpected'}):
+            e = clean_env()
+            self.assertEqual({k:v for k,v in e.items() if k.upper().startswith('FM1_')}, {'FM1_LCD_TIMED':'1'})
+
+
     def test_pcm(self):
         raw = b'\x01\x00\x02\x00' * (44100 * 4 - 22050) + bytes(22050 * 4)
         self.assertEqual(check_pcm(raw), 176400)
@@ -224,7 +339,14 @@ class Tests(unittest.TestCase):
 if __name__ == '__main__':
     if sys.argv[1:] == ['--test']:
         unittest.main(argv=[sys.argv[0]], verbosity=2)
-    elif len(sys.argv) == 3:
+    elif sys.argv[1:] == ['--list']:
+        for name, controls in CONTROLS.items():
+            print(name + ': ' + controls)
+    elif len(sys.argv) == 3 and sys.argv[1] == '--play':
+        parser = argparse.ArgumentParser(description='Local source-built Windows virtual audition (emulator only)')
+        parser.add_argument('--play', choices=tuple(CORES), required=True)
+        play(parser.parse_args().play)
+    elif len(sys.argv) == 3 and not sys.argv[1].startswith('-') and not sys.argv[2].startswith('-'):
         main(Path(sys.argv[1]), Path(sys.argv[2]))
     else:
-        raise SystemExit('usage: ci_windows.py <linux-evidence-dir> <new-windows-evidence-dir> | --test')
+        raise SystemExit('usage: ci_windows.py <linux-evidence-dir> <new-windows-evidence-dir> | --test | --list | --play <instrument>')
