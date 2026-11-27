@@ -40,6 +40,18 @@ jobs:
             gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC chrono.c live_bridge.c -o "$lib"
           fi
           python live_test.py "$lib"
+      - name: Tidal Interlock live score and matched pattern control
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then lib=chronomorph-live.dll; else lib=chronomorph-live.so; fi
+          python tidal_interlock.py "$lib" tidal-evidence
+          python -c "import json,pathlib; r=json.loads(pathlib.Path('tidal-evidence/receipt.json').read_text()); assert r['arms']['tidal-interlock']['wav_sha256']=='dfadb7599551b54ea0243b64948f462fd80c1e521d85446b64671b9e9dc9d787'; assert r['arms']['fixed-pattern-control']['wav_sha256']=='e34de50878f2bf80547725acadcfe35068ddc1a117d6bb52e6ee76b4e476f775'; assert r['arms']['tidal-interlock']['trace_sha256']=='d486c58e2430f7d48d4d60031c85855efe0989c256315ece33da043ed1d96f09'; assert r['arms']['fixed-pattern-control']['trace_sha256']=='3e7b8fe82d42982522f115b97486ea565d513a3f424e470aba8103b17f5fa457'"
+          cp tidal_interlock.py tidal-evidence/
+          git rev-parse HEAD > tidal-evidence/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chronomorph-tidal-interlock-${{ runner.os }}
+          path: instruments/chronomorph/tidal-evidence/
+          if-no-files-found: error
       - name: Linux UBSan
         if: runner.os == 'Linux'
         run: |
