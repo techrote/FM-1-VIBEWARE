@@ -53,10 +53,28 @@ jobs:
           ./chronomorph.exe --render audition/slow-eclipse.wav 2 17 84 48 12 12 9 293 7 73 13 4693
           python -c "import hashlib,pathlib; expected={'glass-lattice':'d4d889efef0831c5ade6d614c40f66eb3476aaaed777cc465f643cf7f46f246a','broken-meridian':'80ab28577e2f2572708c4dcb2f19b89b0cf9a1585a1c0849d2d9891670d35058','slow-eclipse':'3a0b4ae74b2af0ac426b9ee9fd6ec97c715809b5cbe3d90b25c773785d31c05e'}; actual={p.stem:hashlib.sha256(p.read_bytes()).hexdigest() for p in pathlib.Path('audition').glob('*.wav')}; print(actual); assert actual==expected"
           cp chrono.c chrono.h audition.c server.py smoke.py index.html profile.json README.md chronomorph.exe audition/
-          cp live.py live.html live_bridge.c live_test.py chronomorph-live.* audition/
+          cp live.py live.html live_bridge.c live_test.py browser_test.py chronomorph-live.* audition/
           git rev-parse HEAD > audition/source-revision.txt
       - uses: actions/upload-artifact@v4
         with:
           name: chronomorph-native-${{ runner.os }}
           path: instruments/chronomorph/audition/
           if-no-files-found: error
+  browser:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: instruments/chronomorph
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned browser test driver
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Actual browser audio scheduling and controls
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC chrono.c live_bridge.c -o chronomorph-live.so
+          python browser_test.py chronomorph-live.so
