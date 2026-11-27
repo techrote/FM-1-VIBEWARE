@@ -42,9 +42,28 @@ jobs:
           for p in 0 1 2 3; do ./ecophon audition/$p.wav "$p" 42 30; done
           python -c "import hashlib,pathlib; expected=['6971486e4a5736a93cc1dda9ed4dc5675edf79f828de1e14a1fad70f2fc9ac88','e6c974d5988449d7880838223cc11a835ffba764ba67854e46558e2f12618b74','155158bdf0d51a2bed10948d9f1bf226d9f6c57e9b8f272c5c6ddcfb99e8bc7b','73e1093fb5103213af9f3ddccf52bce37ad1fbbb9aa5b3a1375c5c2cbcf3a41f']; actual=[hashlib.sha256(pathlib.Path(f'audition/{p}.wav').read_bytes()).hexdigest() for p in range(4)]; print(actual); assert actual==expected"
           cp ecophon* audition/
-          cp README.md fixture.c live.py live.html test_live.py profile.json audition/
+          cp README.md fixture.c live.py live.html test_live.py test_browser.py profile.json audition/
           if [ "$RUNNER_OS" = Windows ]; then cp ecof.dll audition/; else cp libecof.so audition/; fi
       - uses: actions/upload-artifact@v4
         with:
           name: ecophon-portable-${{ runner.os }}
           path: instruments/ecophon/audition/
+
+  browser:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: instruments/ecophon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile native fixture
+        run: gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC ecophon.c fixture.c -o libecof.so
+      - name: Install pinned browser test dependency
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Actual Chromium audio and controls
+        run: python test_browser.py libecof.so

@@ -2,28 +2,35 @@
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ecophon — habitat laboratory</title>
 <style>
-*{box-sizing:border-box}body{background:#101b20;color:#d8e8df;font:16px system-ui;margin:1rem auto;padding:1rem;max-width:800px}h1{font-size:1.8rem}button,select,input{accent-color:#75d1ae;font:inherit}button,select{background:#263b40;color:#fff;padding:.5rem;border:1px solid #486363;border-radius:.4rem}label{display:block;margin:.7rem 0}input[type=range]{width:60%;vertical-align:middle}canvas{width:100%;background:#15282c;border:1px solid #486363}small{color:#b5cbc1}#status{min-height:1.5em;color:#ffc58d}button:disabled{opacity:.5}
+*{box-sizing:border-box}body{background:#101b20;color:#d8e8df;font:16px system-ui;margin:1rem auto;padding:1rem;max-width:800px}h1{font-size:1.8rem}button,select,input{accent-color:#75d1ae;font:inherit}button,select{background:#263b40;color:#fff;padding:.5rem;border:1px solid #486363;border-radius:.4rem}label{display:block;margin:.7rem 0}input[type=range]{width:60%;vertical-align:middle}canvas{width:100%;background:#15282c;border:1px solid #486363}#xy{height:112px;border:1px solid #486363;border-radius:.4rem;position:relative;touch-action:none;background:linear-gradient(0deg,#542e33,#224b43);cursor:crosshair}#marker{position:absolute;width:16px;height:16px;border:2px solid white;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none}small{color:#b5cbc1}#status{min-height:1.5em;color:#ffc58d}button:disabled{opacity:.5}
 </style>
 <h1>ECOPHON / habitat laboratory</h1>
 <p>Local native synthesis · ecological state, not FM-1 device telemetry.</p>
-<label>Regime <select id="preset"><option>Mutualism</option><option>Scarcity</option><option>Seasonal Bloom</option><option>Frozen comparator</option></select></label>
+<label>Regime for next reset <select id="preset"><option>Mutualism</option><option>Scarcity</option><option>Seasonal Bloom</option><option>Frozen comparator</option></select></label>
 <label>Seed <input id="seed" type="number" min="0" max="4294967295" value="42"></label>
 <button id="start">Start / reset habitat</button> <button id="stop">Panic / stop</button>
 <label>Fertility <input id="fertility" type="range" min="0" max="255" value="180"><output id="of">180</output></label>
 <label>Sharing <input id="sharing" type="range" min="0" max="255" value="200"><output id="os">200</output></label>
 <label>Survival pressure <input id="pressure" type="range" min="0" max="255" value="40"><output id="op">40</output></label>
 <label><input id="frozen" type="checkbox"> Freeze ecological interactions (comparison)</label>
+<p>Environmental XY: fertility left to right, pressure top to bottom</p><div id="xy" aria-label="Environmental gesture surface"><span id="marker"></span></div>
 <canvas id="habitat" width="640" height="360" aria-label="Four resource patches and eight possible agents"></canvas>
-<p><small>Bars: finite patch resource. Circles: living agents; size: energy, color: species, number: slot. Visualization follows generated chunks, slightly ahead of playback.</small></p>
+<p><small>Bars: finite patch resource. Circles: living agents; size: energy, color: species, number: slot. Visualization follows completed audio blocks on the local playback clock.</small></p>
 <p id="stats"></p><p id="status" role="status">Ready. Start at low volume.</p>
 <script>
 "use strict";
 const $=id=>document.getElementById(id), names=["fertility","sharing","pressure"], outs=["of","os","op"];
-let ctx,gain,generation=0,epoch=0,next=0,timer=0,live=false,starting=false;
+let ctx,gain,generation=0,epoch=0,next=0,timer=0,live=false,starting=false,raf=0;
+const visuals=[];const MAX_VISUALS=8;
 const presets=[[180,200,40,0],[100,20,150,0],[230,90,85,0],[180,200,40,1]];
-function sliders(v){names.forEach((n,i)=>{$(n).value=v[i];$(outs[i]).textContent=v[i]});$("frozen").checked=!!v[3]}
-names.forEach((n,i)=>$(n).oninput=()=>$(outs[i]).textContent=$(n).value);
-$("preset").onchange=()=>sliders(presets[$("preset").selectedIndex]);
+function marker(){ $("marker").style.left=(100*+$("fertility").value/255)+"%"; $("marker").style.top=(100*+$("pressure").value/255)+"%" }
+function sliders(v){names.forEach((n,i)=>{$(n).value=v[i];$(outs[i]).textContent=v[i]});$("frozen").checked=!!v[3];marker()}
+names.forEach((n,i)=>$(n).oninput=()=>{$(outs[i]).textContent=$(n).value;marker()});
+$("preset").onchange=()=>{if(!live)sliders(presets[$("preset").selectedIndex]);else $("status").textContent="Regime selected for next reset; current habitat still playing."};
+function gesture(e){const b=$("xy").getBoundingClientRect();const q=v=>Math.round(255*Math.max(0,Math.min(1,v)));$("fertility").value=q((e.clientX-b.left)/b.width);$("pressure").value=q((e.clientY-b.top)/b.height);$("of").textContent=$("fertility").value;$("op").textContent=$("pressure").value;marker()}
+$("xy").onpointerdown=e=>{if(!e.isPrimary)return;$("xy").setPointerCapture(e.pointerId);gesture(e)};
+$("xy").onpointermove=e=>{if($("xy").hasPointerCapture(e.pointerId))gesture(e)};
+marker();
 async function post(path,data){
  const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-Ecophon-Fixture":"1"},body:JSON.stringify(data)});
  if(!r.ok)throw Error("request "+r.status);return r.json();
@@ -42,9 +49,16 @@ function draw(d){
  }
  $("stats").textContent="Ticks "+d.ticks+" · births "+d.births+" · deaths "+d.deaths+" · gifts "+d.gifts+" · migrations "+d.moves;
 }
+function animate(e){
+ if(!live||e!==epoch)return;
+ let latest=null;
+ while(visuals.length&&visuals[0].at<=ctx.currentTime)latest=visuals.shift();
+ if(latest)draw(latest.state);
+ raf=requestAnimationFrame(()=>animate(e));
+}
 async function pump(e){
  if(!live||e!==epoch)return;
- if(next-ctx.currentTime>0.16){timer=setTimeout(()=>pump(e),25);return}
+ if(next-ctx.currentTime>0.16||visuals.length>=MAX_VISUALS){timer=setTimeout(()=>pump(e),25);return}
  try{
   const d=await post("/step",{generation,fertility:+$("fertility").value,sharing:+$("sharing").value,pressure:+$("pressure").value,frozen:+$("frozen").checked});
   if(!live||e!==epoch)return;
@@ -53,11 +67,11 @@ async function pump(e){
   for(let i=0;i<a.length;i++){let v=raw.charCodeAt(i*2)|(raw.charCodeAt(i*2+1)<<8);a[i]=(v>=32768?v-65536:v)/32768}
   const src=ctx.createBufferSource();src.buffer=b;src.connect(gain);
   next=Math.max(next,ctx.currentTime+0.015);src.start(next);next+=b.duration;
-  draw(d);timer=setTimeout(()=>pump(e),5);
+  delete d.pcm;visuals.push({at:next,state:d});timer=setTimeout(()=>pump(e),5);
  }catch(err){if(e===epoch){stop();$("status").textContent="Stopped: "+err.message}}
 }
 function stop(){
- ++epoch;live=false;clearTimeout(timer);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
+ ++epoch;live=false;clearTimeout(timer);cancelAnimationFrame(raf);visuals.length=0;$("stats").textContent="";$("habitat").getContext("2d").clearRect(0,0,640,360);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
  const old=generation;generation=0;if(old)post("/panic",{generation:old}).catch(()=>{});
  $("status").textContent="Stopped / locally muted.";
 }
@@ -72,7 +86,7 @@ $("start").onclick=async()=>{
   const d=await post("/reset",{seed,preset});
   if(e!==epoch){post("/panic",{generation:d.generation}).catch(()=>{});return}
   generation=d.generation;sliders(d.controls);gain=ctx.createGain();gain.gain.value=0.55;gain.connect(ctx.destination);
-  live=true;next=ctx.currentTime+0.04;$("status").textContent="Playing native ecological model.";pump(e);
+  live=true;next=ctx.currentTime+0.04;$("status").textContent="Playing native ecological model.";animate(e);pump(e);
  }catch(err){if(e===epoch){stop();$("status").textContent=err.message}}finally{starting=false;$("start").disabled=false}
 };
 window.addEventListener("pagehide",stop);
