@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import stat
 import subprocess
 import sys
 import tempfile
@@ -24,13 +25,23 @@ SOURCE = ("ecophon.c", "ecophon.h", "fixture.c", "live.py", "live.html", "profil
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
-def extract(archive, dest, expected, ignored=()):
+ECO_SUCCESSOR_FILES = (
+    "performances/habitat-arc.wav", "performances/steady-control.wav",
+    "performances/frozen-control.wav", "performances/performance.json",
+    "performances/companion-replay.json", "feedback/population-feedback.wav",
+    "feedback/population-steady.wav", "feedback/population-feedback.json",
+    "feedback/population-steady.json", "feedback/population-summary.json",
+)
+
+def extract(archive, dest, expected, ignored=(), allowed_nested=()):
     assert sha(archive.read_bytes()) == expected, "original archive digest mismatch"
     with zipfile.ZipFile(archive) as z:
         names = z.namelist()
         assert len(names) == len(set(n.casefold() for n in names)), "duplicate name"
         kept = [n for n in names if n not in ignored]
-        assert all(n and n not in (".", "..") and "/" not in n and chr(92) not in n and ":" not in n for n in kept), "unexpected non-flat archive"
+        assert all(n in allowed_nested or (n and n not in (".", "..") and "/" not in n and chr(92) not in n and ":" not in n) for n in kept), "unexpected archive path"
+        assert all(not stat.S_ISLNK(i.external_attr >> 16) for i in z.infolist()), "symlink archive entry"
+        assert set(allowed_nested).issubset(kept), "missing required nested payload"
         assert sum(i.file_size for i in z.infolist()) < 30_000_000
         z.extractall(dest, members=kept)
 
@@ -100,6 +111,7 @@ def main():
     p.add_argument("source",type=Path)
     p.add_argument("archive",type=Path)
     p.add_argument("digest")
+    p.add_argument("--successor", action="store_true")
     args=p.parse_args()
     source=args.source.resolve()/ "instruments/ecophon"
     windows=sys.platform=="win32"
@@ -109,7 +121,7 @@ def main():
         root=Path(td)
         extracted=root/"original package"
         extracted.mkdir()
-        extract(args.archive,extracted,args.digest)
+        extract(args.archive,extracted,args.digest, allowed_nested=ECO_SUCCESSOR_FILES if args.successor else ())
         for name in SOURCE:
             assert (extracted/name).read_bytes()==(source/name).read_bytes(),name
         for i,h in enumerate(WAVS):

@@ -1,0 +1,124 @@
+name: QA successor native archives and replay alignment
+on:
+  pull_request:
+    paths: ['.github/workflows/qa-successor-native.yml','qualification/successor_scores.py','qualification/verify_replay.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  successor:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - instrument: ecophon
+            ref: 65d8ca6e977218b491643d58f9ab386db6149632
+            os: ubuntu-24.04
+            artifact: 15233232444
+            digest: 2cf29ce25df515af4d601167616011af9a31d48f19e3a0ee9a5afc980d4d6ca0
+            score: 0
+            score_digest: none
+          - instrument: ecophon
+            ref: 65d8ca6e977218b491643d58f9ab386db6149632
+            os: windows-latest
+            artifact: 15233670382
+            digest: c3f15738c11a40d5b226a50c37401e7e6abe523874502cefa3b6141040e07dca
+            score: 0
+            score_digest: none
+          - instrument: grimoire
+            ref: f7da12d3675489083f5debd9bee65ed4da0cbf81
+            os: ubuntu-24.04
+            artifact: 15233416349
+            digest: beefb1abb12d5ecd33148ab02122ee9d5723a4d055d1c9aa8ee6d0d534ba756f
+            score: 15233411224
+            score_digest: 4d1ae3a42b7c084d72ea5cd7f2d18c32cdb0981b2b0b5b9e391cf07c2e9d20fb
+          - instrument: grimoire
+            ref: f7da12d3675489083f5debd9bee65ed4da0cbf81
+            os: windows-latest
+            artifact: 15232479834
+            digest: 4f9a8ba47c622ff45efc600e169c5d0f222fbe86b256859e0ea92cdffcbdecf0
+            score: 15232489944
+            score_digest: ae36f4f217d0502fdefb0d3044d4ad02e030ccd84f81fa59ab11fa16a6c49c57
+          - instrument: xenoresonator
+            ref: e5ecfdb4277d3b5b808c886517f4ed306224bd1f
+            os: ubuntu-24.04
+            artifact: 15231594009
+            digest: 6c96684bcba000085d501cca64cf09bd5f0941b3530dd65e75108ec94f1356a1
+            score: 15231678735
+            score_digest: 00b526142af6a64558150ed459c5295096b1052c756d8736bbbb755442c78ab5
+          - instrument: xenoresonator
+            ref: e5ecfdb4277d3b5b808c886517f4ed306224bd1f
+            os: windows-latest
+            artifact: 15232785267
+            digest: 2d316b5f1889b22639cf8a3805a09686a1ad71662e83ae44099c6cd5337dc6c4
+            score: 15231368825
+            score_digest: 37f6c6d75bb2d136244621267116436510b2c4c4c1c04ae24d61547bb8390e47
+          - instrument: chronomorph
+            ref: 110f857e54fa3c7730be53911a0a0fad0ce3c3a3
+            os: ubuntu-24.04
+            artifact: 15231854633
+            digest: 7588299e4afb6f5e95ec9239b43279d504346cd05a31cd8990e614849b344b8b
+            score: 15232941177
+            score_digest: 64b4632fb7dfe8c5da285eff469559bf69c9ec5b4abb11248c275a0994e20442
+          - instrument: chronomorph
+            ref: 110f857e54fa3c7730be53911a0a0fad0ce3c3a3
+            os: windows-latest
+            artifact: 15232816482
+            digest: c346a0eefeb2be22fdd03f0b6e07fdd1147e689e1f983423a3d593b29f915176
+            score: 15232701672
+            score_digest: b9b2d9ad4e348e6dd857cd4625d7feda1636f5727b7681a8198073645e4f53da
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          path: frozen
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exact original archive and independent native rebuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ matrix.artifact }}
+          DIGEST: ${{ matrix.digest }}
+          PIN: ${{ matrix.ref }}
+          INSTRUMENT: ${{ matrix.instrument }}
+          SCORE: ${{ matrix.score }}
+          SCORE_DIGEST: ${{ matrix.score_digest }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen rev-parse HEAD)" = "$PIN"
+          mkdir -p receipts
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > native.zip
+          if [ "$SCORE" != 0 ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SCORE/zip" > score.zip
+          fi
+          if [ "$INSTRUMENT" = ecophon ]; then
+            python qualification/ecophon_archive.py frozen native.zip "$DIGEST" --successor | tee receipts/native.log
+          elif [ "$INSTRUMENT" = grimoire ]; then
+            python qualification/grimoire_archive.py frozen native.zip "$DIGEST" | tee receipts/native.log
+          else
+            python qualification/native_archive.py "$INSTRUMENT" frozen native.zip "$DIGEST" | tee receipts/native.log
+          fi
+          tail -n 1 receipts/native.log > receipts/native.json
+          python qualification/successor_scores.py "$INSTRUMENT" frozen native.zip "$DIGEST" score.zip "$SCORE_DIGEST" | tee receipts/score.log
+          tail -n 1 receipts/score.log > receipts/score.json
+          python -c "import json; [json.load(open('receipts/'+n+'.json')) for n in ('native','score')]"
+          git -C frozen rev-parse HEAD > receipts/source.txt
+          gcc --version > receipts/compiler.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-successor-${{ matrix.instrument }}-${{ matrix.os }}
+          path: receipts/
+          if-no-files-found: error
