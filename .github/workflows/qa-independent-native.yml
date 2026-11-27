@@ -1,0 +1,42 @@
+name: QA independent native receipts
+on:
+  push:
+    branches: ['qa/independent-native-001']
+  pull_request:
+    paths: ['qualification/**','catalogue/**','.github/workflows/qa-independent-native.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  independent-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: 03102e8d82148a6dba871024f5944246e0c913e2
+          path: frozen-grimoire
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact candidate and run independent real HTTP qualification
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-grimoire rev-parse HEAD)" = 03102e8d82148a6dba871024f5944246e0c913e2
+          mkdir -p receipts
+          python qualification/orbit_http.py frozen-grimoire | tee receipts/orbit-http.json
+          python -c "import json; a=json.load(open('receipts/orbit-http.json')); b=json.load(open('qualification/orbit-http-baseline.json')); assert a==b, (a,b)"
+          git -C frozen-grimoire rev-parse HEAD > receipts/grimoire-sha.txt
+          gcc --version > receipts/compiler.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-native-receipts-${{ matrix.os }}
+          path: receipts/
