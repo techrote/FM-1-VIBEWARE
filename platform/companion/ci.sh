@@ -3,6 +3,10 @@ set -euo pipefail
 export LC_ALL=C
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 HERE="$ROOT/platform/companion"
+if ! git -C "$ROOT" diff --quiet HEAD -- platform/companion platform/emulator .github/workflows/cydaux-endpoint.yml; then
+    echo 'Qualification requires committed adapter, harness and build sources.' >&2
+    exit 1
+fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 RES="$ROOT/companion-results"
@@ -25,8 +29,8 @@ checkout https://github.com/techrote/FM-1-VIBEWARE.git "$TMP/xeno" "$XENO"
 checkout https://github.com/zvenson/dinghy.git "$TMP/dinghy" "$DINGHY"
 checkout https://github.com/joakimeriksson/fm1-emu.git "$TMP/emu" "$EMU"
 ENGINE="$TMP/xeno/instruments/xenoresonator"
-printf 'integration=%s\ncydaux=%s\nxeno=%s\ndinghy=%s\nemulator=%s\ntoolchain_archive=%s\n' \
-    "$(git -C "$ROOT" rev-parse HEAD)" "$CYDAUX_REF" "$XENO" "$DINGHY" "$EMU" "$TC_SHA" > "$RES/pins.txt"
+printf 'integration=%s\nintegration_tree=%s\ncydaux=%s\nxeno=%s\ndinghy=%s\nemulator=%s\ntoolchain_archive=%s\n' \
+    "$(git -C "$ROOT" rev-parse HEAD)" "$(git -C "$ROOT" rev-parse 'HEAD^{tree}')" "$CYDAUX_REF" "$XENO" "$DINGHY" "$EMU" "$TC_SHA" > "$RES/pins.txt"
 for CC in gcc clang; do
     "$CC" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all -I"$ENGINE" -c "$ENGINE/xeno.c" -o "$TMP/xeno.o"
     "$CC" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all -c "$HERE/cyd_endpoint.c" -o "$TMP/endpoint.o"

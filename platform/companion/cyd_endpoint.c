@@ -33,8 +33,10 @@ int cyd_endpoint_receive(CydEndpoint *s,const uint8_t *d,size_t n,uint32_t now,u
         else if(s->session && s->session!=session)code=3;
         else if(s->source<1||s->source>3)code=4;
         else {
-            if(!s->session){s->session=session;s->sequence=sequence;}
-            s->last_ms=now;s->accepted++;
+            if(!s->session){s->session=session;s->sequence=sequence;s->last_ms=now;}
+            /* Discovery retry can recover a lost Identity, but an old
+             * handshake must not keep notes alive by renewing the lease. */
+            s->accepted++;
             *out_n=frame(out,CYD_IDENTITY,session,sequence,6);
             out[14]=2;out[15]=1;out[16]=0;out[17]=31;out[18]=0;out[19]=s->source;
             return 1;

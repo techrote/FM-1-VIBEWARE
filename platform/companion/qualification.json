@@ -1,0 +1,195 @@
+{
+  "schema": 1,
+  "captured_utc": "2026-11-27T18:13:14.639111+00:00",
+  "status": "PASS: actual target build and manual emulator qualification",
+  "scope": "Actual pi32v2 instructions, unmodified pinned fm1-emu CPU/SoC/USB model, actual Xeno DSP; no physical hardware execution",
+  "source": {
+    "repository": "https://github.com/techrote/FM-1-VIBEWARE",
+    "pr": 15,
+    "platform_base": "4133787e51010581c9ed594db7e57b9506894c84",
+    "local_tested_code_commit": "b54a171be076474434c2c56420d827f39c06496f",
+    "local_tested_code_tree": "7e4ace857d62cd6fcb265b3ec9b7ea1b7176dbf0",
+    "companion_cpp_pin": "7a8ce4be817ccc85ae22f982df98baa701b8176a",
+    "xenoresonator": "fa27a317bb116f2afb62a710876f96314756f814",
+    "dinghy": "92f17b28f2d05f2f78fd1b160b58475d518902c8",
+    "emulator": "736aded65c8e2e9d652cf595fca248734483a877",
+    "adapter_files_sha256": {
+      "cyd_endpoint.c": "57b7ab96c9736d31b9fc4a0ec67c8b16f3a8eb38fbf1cf74006b5d27ca880d0a",
+      "cyd_endpoint.h": "9d45e53dd314087b0237b0df8694de166f1c1814c4bf419c4bea80eed2459749",
+      "xeno_app.c": "c1962cd56fa20e15f8ed487d4fa3dc73581ff6f9828f4faff56cf4174ca47336",
+      "arithmetic.c": "8f74f789fd6fec48ce10c5c98f0d418adb1b3d60fd8ed74a1313b311b5dce2a9",
+      "test_arithmetic.c": "b64a0dd7b252f50c81e81d7406d243d4a48a0e4d4862e5b86b658d796626ae44",
+      "test_contract.cpp": "137848cec64b120ed52e44a2b4722c66374afeeca5ea6de58f0f55cd2eb59678",
+      "usb_harness.rs": "8c93baa370a25c89af40eccec4e6ac37f0ee112bc9591c75770d62e9e70fec0c",
+      "prepare_platform.py": "fac438a9586dc3fa52f69438aece92ab9e2f93aaf36f5645b054c7d0aea1f344",
+      "ci.sh": "9a2610fefc1e3e0e73eb61201f89c92ecb560860456508d56987b680f274a0ff"
+    },
+    "companion_codec_files_sha256": {
+      "src/companion.cpp": "747ed92c3d5bd5d2a513ce39a884ac7c100d30c1809ac2ca80c2f6573f536d3f",
+      "include/fm1/companion.hpp": "27e3839f03d32733663005bb712569a36eb25039b4ae39b9ca794403db182c5b"
+    }
+  },
+  "toolchain": {
+    "pi32v2_clang": "23.1.5 at 38cdba719126c2a59995c16dd364d70c6561e86a",
+    "archive_sha256": "cb896562418a2be93edb9bac26af4bc81a106a32974002a78e6b9fc203c93990",
+    "rustc": "1.100.0 stable",
+    "host_sanitizers": "AddressSanitizer + UndefinedBehaviorSanitizer; leak detection disabled in this ptrace-constrained local host"
+  },
+  "target": {
+    "elf_sha256": "e8d9201f83525cb96949326e2d685e8a900280b923497104eb3368e18c1a4507",
+    "internal_emulator_xip_sha256": "488d614f669714efa5b6b37a8d780a59665381f6b56e23d4a2ffcd940a1d8186",
+    "xip_bytes": 57852,
+    "undefined_symbols": 0,
+    "sections_bytes": {
+      ".text": 54580,
+      ".ram_text": 2948,
+      ".data": 36,
+      ".bss": 12024,
+      ".pool": 30720,
+      ".noinit": 76
+    },
+    "linked_ram_sections_bytes": 45804,
+    "main_stack_reserved_bytes": 24320,
+    "supervisor_stack_reserved_bytes": 7936,
+    "dynamic_allocation": "None in the adapter or Xeno core; source/link inspection, not a physical heap measurement",
+    "artifact_distribution": "No ELF, raw XIP, installer or emulator executable in the delivered evidence",
+    "linked_ram_with_primary_section_alignment_bytes": 45832
+  },
+  "host_contract": {
+    "actual_cpp_to_c_interoperability": "PASS",
+    "sequence_wrap_commands": 20000,
+    "malformed_buffer_cases": 20000,
+    "independent_direct_core_pcm_match": "PASS",
+    "deferred_state_coalescing": "PASS",
+    "replayed_discovery_preserves_order_and_does_not_renew_lease": "PASS",
+    "competing_session_rejected": "PASS",
+    "lease_counter_wrap": "PASS",
+    "panic_silence": "PASS",
+    "randomized_freestanding_64bit_division_cases": 20000
+  },
+  "results": {
+    "instruction": {
+      "status": "PASS",
+      "mode": "instruction",
+      "source": "actual pi32v2 firmware in fm1-emu USB model",
+      "elapsed_host_seconds": 1.931620296,
+      "emulated_ms": 3646,
+      "i2s_frames": 141824,
+      "usb_audio_frames": 134306,
+      "usb_audio_underruns": 0,
+      "emulated_main_stack_used": 324,
+      "emulated_supervisor_stack_used": 332,
+      "checks": [
+        "USB discovery",
+        "actual readback",
+        "parameter and preset",
+        "PCM repeat",
+        "coupling contrast",
+        "actual interval peaks",
+        "stale session",
+        "invalid range",
+        "panic tail",
+        "lease expiry",
+        "new session recovery",
+        "modeled callback deadline",
+        "emulated stack reserve"
+      ],
+      "target_counters": {
+        "target_audio_blocks": 550,
+        "target_audio_max_ticks": 10809,
+        "target_reply_deferrals": 0,
+        "emulated_main_stack_used": 324,
+        "emulated_supervisor_stack_used": 332
+      },
+      "usb_round_trip_emulated_ms": {
+        "count": 22,
+        "minimum": 2,
+        "maximum": 8
+      },
+      "audio_callback_emulated_microseconds": 450.375,
+      "audio_block_deadline_emulated_microseconds": 5804.988662131519,
+      "artifact_sha256": {
+        "actual-fm1-lcd.bmp": "611213f8bdaad940a4d75aeb49a8886c95cb310838dda7ef7113fe60cc0cb64b",
+        "target-metrics.txt": "760eeec88b8ff103e9e0756f5a0e656555636a7f7a10a6da614923635598efb1",
+        "xeno-coupled.wav": "b56cb0808ccbf2c3445ae0857e5fa9f51d8e1139bdf86e00b48b68841f2164cc",
+        "xeno-full-session.wav": "085d67305a287bf8849c7b6792e33612b1a21429f9f4f7ea88ee1089fe35cd61",
+        "xeno-repeat.wav": "732fb0a8f7db6f224d4368acb70b8c0ad3f9208c6971ec33c683348ff286c2ac",
+        "xeno-uncoupled.wav": "732fb0a8f7db6f224d4368acb70b8c0ad3f9208c6971ec33c683348ff286c2ac"
+      },
+      "audible_prefix_2048_stereo_frames_sha256": {
+        "uncoupled": "d2a91ed064d8289dd3254235ee29c6d836991054ac1a7885179514d38ad96aa8",
+        "repeat": "d2a91ed064d8289dd3254235ee29c6d836991054ac1a7885179514d38ad96aa8",
+        "coupled": "f160f70c6b36029b99b1600605a6cb1509d299ed3e1d518e19afcc09d22d6e78"
+      }
+    },
+    "strict": {
+      "status": "PASS",
+      "mode": "strict",
+      "source": "actual pi32v2 firmware in fm1-emu USB model",
+      "elapsed_host_seconds": 5.961776367,
+      "emulated_ms": 3643,
+      "i2s_frames": 135424,
+      "usb_audio_frames": 127911,
+      "usb_audio_underruns": 0,
+      "emulated_main_stack_used": 324,
+      "emulated_supervisor_stack_used": 332,
+      "checks": [
+        "USB discovery",
+        "actual readback",
+        "parameter and preset",
+        "PCM repeat",
+        "coupling contrast",
+        "actual interval peaks",
+        "stale session",
+        "invalid range",
+        "panic tail",
+        "lease expiry",
+        "new session recovery",
+        "modeled callback deadline",
+        "emulated stack reserve"
+      ],
+      "target_counters": {
+        "target_audio_blocks": 525,
+        "target_audio_max_ticks": 15741,
+        "target_reply_deferrals": 0,
+        "emulated_main_stack_used": 324,
+        "emulated_supervisor_stack_used": 332
+      },
+      "usb_round_trip_emulated_ms": {
+        "count": 22,
+        "minimum": 2,
+        "maximum": 7
+      },
+      "audio_callback_emulated_microseconds": 655.875,
+      "audio_block_deadline_emulated_microseconds": 5804.988662131519,
+      "artifact_sha256": {
+        "actual-fm1-lcd.bmp": "611213f8bdaad940a4d75aeb49a8886c95cb310838dda7ef7113fe60cc0cb64b",
+        "target-metrics.txt": "e704d94f006256a303d9af1502e512dc48b2d875b3779db173b53a4edbaef3e7",
+        "xeno-coupled.wav": "b56cb0808ccbf2c3445ae0857e5fa9f51d8e1139bdf86e00b48b68841f2164cc",
+        "xeno-full-session.wav": "daca3b0c243caf89611a12e8aa3d266d4c1b47758fe40b34c06add49f4bba461",
+        "xeno-repeat.wav": "732fb0a8f7db6f224d4368acb70b8c0ad3f9208c6971ec33c683348ff286c2ac",
+        "xeno-uncoupled.wav": "732fb0a8f7db6f224d4368acb70b8c0ad3f9208c6971ec33c683348ff286c2ac"
+      },
+      "audible_prefix_2048_stereo_frames_sha256": {
+        "uncoupled": "d2a91ed064d8289dd3254235ee29c6d836991054ac1a7885179514d38ad96aa8",
+        "repeat": "d2a91ed064d8289dd3254235ee29c6d836991054ac1a7885179514d38ad96aa8",
+        "coupled": "f160f70c6b36029b99b1600605a6cb1509d299ed3e1d518e19afcc09d22d6e78"
+      }
+    }
+  },
+  "cross_clock_model_audible_prefix_equal": true,
+  "workflow_status": "Local complete script fetched exact pins and passed GCC gates but stopped at missing system Clang; hosted CI has Clang and must independently pass on the final published checkpoint. Manual target compile/link and both model runs above completed successfully.",
+  "limitations": [
+    "No physical FM-1 or CYD measurements.",
+    "Timing values are emulator-clock values; elapsed_host_seconds is host execution cost only.",
+    "PCM telemetry is measured before platform MASTER attenuation and I2S packing.",
+    "Desired state is applied/coalesced at 256-frame audio block boundaries; no sample-accurate event scheduler is claimed.",
+    "Native evaluator and CPU-emulated firmware are separate evaluated routes.",
+    "Raw XIP is an internal emulator input, not an installable firmware package."
+  ],
+  "evidence_files_sha256": {
+    "evidence/local-contract.txt": "ffb9bc929ce2117c4dec670f7b95acde5a5380b2544ea4d561011bd68e439fea",
+    "evidence/local-instruction.log": "1b60f2b2fafec2e893d1c4d334c721806227a2a62d5cc88fabed2be72a114a88",
+    "evidence/local-strict.log": "a5b142267f133cf1d92a95c00daeb1d8fa9477cd2d33da0d2e48acccfd2b158b"
+  }
+}

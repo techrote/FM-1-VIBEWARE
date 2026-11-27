@@ -5,6 +5,8 @@ use fm1_soc::machine::{Machine, Options};
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
+const STACK_CANARY:u32=0xa55ac33c;
+const STACKS:[(u32,u32);2]=[(0x01c74100,0x01c7a000),(0x01c7a100,0x01c7c000)]; // pinned app.ld
 
 fn frame(op:u8,session:u32,sequence:u16,payload:&[u8])->Vec<u8>{
     let mut v=vec![0xf0,0x7d,b'C',b'Y',1,0,op];
@@ -17,6 +19,7 @@ fn run_to(m:&mut Machine,ms:u64){
 }
 fn request(m:&mut Machine,op:u8,session:u32,sequence:u16,payload:&[u8],expected:u8)->Vec<u8>{
     assert!(m.soc.usb.midi_take().is_empty(),"unsolicited stale USB reply");
+    let sent_ms=m.soc.periph.ms();
     m.soc.usb.midi_send(&frame(op,session,sequence,payload));
     let deadline=m.soc.periph.ms()+350;
     while m.soc.periph.ms()<deadline{
@@ -27,7 +30,7 @@ fn request(m:&mut Machine,op:u8,session:u32,sequence:u16,payload:&[u8],expected:
             assert_eq!(reply[6],expected,"USB operation response: {reply:02x?}");
             let id=(0..4).fold(0u32,|v,i|v|((reply[7+i] as u32)<<(7*i)));
             assert_eq!(id,session);assert_eq!(reply[11] as u16|((reply[12] as u16)<<7),sequence);
-            println!("usb_reply ms={} op={} seq={} bytes={:02x?}",m.soc.periph.ms(),expected,sequence,reply);
+            println!("usb_reply ms={} rtt_ms={} op={} seq={} bytes={:02x?}",m.soc.periph.ms(),m.soc.periph.ms()-sent_ms,expected,sequence,reply);
             return reply;
         }
     }
@@ -46,6 +49,7 @@ fn strike(m:&mut Machine,seq:&mut u16,coupling:u8)->Vec<i16>{
     *seq+=1;request(m,5,42,*seq,&[2,coupling],4);
     let begin=m.soc.periph.audio.len();
     *seq+=1;let state=request(m,7,42,*seq,&[48,110],4);assert_eq!(state[26]&1,1);
+    assert!(state[34]>0 && state[28..34].iter().any(|v|*v>0),"actual peak/modal telemetry missed the strike");
     let until=m.soc.periph.ms()+180;run_to(m,until);
     let pcm=m.soc.periph.audio[begin..].to_vec();
     *seq+=1;request(m,7,42,*seq,&[48,0],4);
@@ -57,13 +61,18 @@ fn audible_prefix(pcm:&[i16])->Vec<i16>{
     let first=pcm.iter().position(|s|*s!=0).expect("audible onset")&!1usize;
     assert!(pcm.len()>=first+4096);pcm[first..first+4096].to_vec()
 }
+fn stack_used(m:&mut Machine,lo:u32,hi:u32)->u32{
+    for addr in (lo..hi).step_by(4){if m.soc.read32(addr)!=STACK_CANARY{return hi-addr;}}
+    0
+}
 fn main(){
     let args:Vec<String>=std::env::args().collect();assert!(args.len()==5,"xip output-dir symbols strict|instruction");
     let strict=args[4]=="strict";let start=Instant::now();
     let opts=Options{strict,jit:!strict,lcd_timed:true,..Options::default()};
     let image=fs::read(&args[1]).expect("pinned raw-XIP image");
     let mut machine=Machine::from_image(image,0x02000120,&opts);
-    machine.soc.usb.plug(machine.soc.periph.hz);
+    for (lo,hi) in STACKS {for addr in (lo..hi).step_by(4){machine.soc.write32(addr,STACK_CANARY);}}
+    machine.soc.usb_plug(); // schedules host USB frame events as well as the cable
     machine.soc.usb.audio_record(44100);
     run_to(&mut machine,1200);
     assert!(machine.soc.usb.product().is_some(),"actual USB enumeration failed");
@@ -90,6 +99,7 @@ fn main(){
     request(&mut machine,1,43,0,&[2],2);
     let after=request(&mut machine,3,43,1,&[],4);assert_eq!(after[26]&1,0,"lease releases gate");
     let out=Path::new(&args[2]);fs::create_dir_all(out).unwrap();
+    fm1_soc::write_bmp(out.join("actual-fm1-lcd.bmp").to_str().unwrap(),&machine.soc.lcd.fb,machine.soc.lcd.inverted).unwrap();
     wav(&out.join("xeno-uncoupled.wav"),&dry);wav(&out.join("xeno-repeat.wav"),&repeat);
     wav(&out.join("xeno-coupled.wav"),&coupled);wav(&out.join("xeno-full-session.wav"),&machine.soc.periph.audio);
     let mut metrics=String::new();
@@ -97,9 +107,14 @@ fn main(){
         let mut fields=line.split_whitespace();let name=fields.next().unwrap();let addr=u32::from_str_radix(fields.next().unwrap(),16).unwrap();
         let value=machine.soc.read32(addr);metrics.push_str(&format!("{name}={value}\n"));
         if name=="target_audio_blocks"{assert!(value>100);}
+        if name=="target_audio_max_ticks"{assert!((value as u64)<256u64*24_000_000/44_100,"modeled audio callback exceeded its 256-frame block deadline");}
     }
+    let main_stack=stack_used(&mut machine,STACKS[0].0,STACKS[0].1);
+    let supervisor_stack=stack_used(&mut machine,STACKS[1].0,STACKS[1].1);
+    assert!(main_stack+1024<STACKS[0].1-STACKS[0].0 && supervisor_stack+1024<STACKS[1].1-STACKS[1].0,"emulated stack reserve");
+    metrics.push_str(&format!("emulated_main_stack_used={main_stack}\nemulated_supervisor_stack_used={supervisor_stack}\n"));
     fs::write(out.join("target-metrics.txt"),&metrics).unwrap();
-    let report=format!("{{\"status\":\"PASS\",\"mode\":\"{}\",\"source\":\"actual pi32v2 firmware in fm1-emu USB model\",\"elapsed_host_seconds\":{},\"emulated_ms\":{},\"i2s_frames\":{},\"usb_audio_frames\":{},\"usb_audio_underruns\":{},\"checks\":[\"USB discovery\",\"actual readback\",\"parameter and preset\",\"PCM repeat\",\"coupling contrast\",\"stale session\",\"invalid range\",\"panic tail\",\"lease expiry\",\"new session recovery\"]}}\n",
-        args[4],start.elapsed().as_secs_f64(),machine.soc.periph.ms(),machine.soc.periph.audio.len()/2,machine.soc.usb.audio.len()/2,machine.soc.usb.audio_underruns);
+    let report=format!("{{\"status\":\"PASS\",\"mode\":\"{}\",\"source\":\"actual pi32v2 firmware in fm1-emu USB model\",\"elapsed_host_seconds\":{},\"emulated_ms\":{},\"i2s_frames\":{},\"usb_audio_frames\":{},\"usb_audio_underruns\":{},\"emulated_main_stack_used\":{},\"emulated_supervisor_stack_used\":{},\"checks\":[\"USB discovery\",\"actual readback\",\"parameter and preset\",\"PCM repeat\",\"coupling contrast\",\"actual interval peaks\",\"stale session\",\"invalid range\",\"panic tail\",\"lease expiry\",\"new session recovery\",\"modeled callback deadline\",\"emulated stack reserve\"]}}\n",
+        args[4],start.elapsed().as_secs_f64(),machine.soc.periph.ms(),machine.soc.periph.audio.len()/2,machine.soc.usb.audio.len()/2,machine.soc.usb.audio_underruns,main_stack,supervisor_stack);
     fs::write(out.join("qualification.json"),&report).unwrap();println!("{metrics}{report}");
 }

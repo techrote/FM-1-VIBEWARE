@@ -13,17 +13,20 @@
 #error Wrong target audio contract
 #endif
 typedef struct {
-    uint32_t version, strike, reset;
+    uint32_t version, strike, reset, panic_serial;
     uint8_t excitation,damping,coupling,material,preset,note,velocity,gate,panic;
 } Command;
-static Command desired={0,0,0,76,38,48,0,0,48,100,0,1}, commands[2];
+static Command desired={0,0,0,0,76,38,48,0,0,48,100,0,1}, commands[2];
 static volatile uint32_t command_slot, applied_version;
 static CydState observations[2];
 static volatile uint32_t observation_slot, observation_generation;
+static volatile uint32_t telemetry_consumed;
 static Xeno xeno;
 static VwRate rate;
 static CydEndpoint endpoint;
-static uint32_t initialized,last_strike,last_reset;
+static uint32_t initialized,last_strike,last_reset,last_panic;
+static uint32_t telemetry_ack,held_peak;
+static uint8_t held_meters[6];
 static volatile uint32_t target_audio_blocks,target_audio_max_ticks,target_reply_deferrals;
 static uint8_t queued_reply[CYD_ENDPOINT_MAX_FRAME];
 static size_t queued_size;
@@ -47,7 +50,7 @@ static int apply(void *ctx,uint8_t op,const uint8_t *p) {
     } else if(op==CYD_NOTE) {
         if(p[1]) {desired.note=p[0];desired.velocity=p[1];desired.gate=1;desired.panic=0;desired.strike++;}
         else if(desired.note==p[0])desired.gate=0;
-    } else if(op==CYD_PANIC) {desired.gate=0;desired.panic=1;}
+    } else if(op==CYD_PANIC) {desired.gate=0;desired.panic=1;desired.panic_serial++;}
     else return 0;
     publish();return 1;
 }
@@ -58,7 +61,9 @@ static int read_state(void *ctx,CydState *out) {
     if(applied_version!=desired.version)return 0;
     before=observation_generation;RING_PUBLISH();slot=observation_slot;
     *out=observations[slot];RING_PUBLISH();after=observation_generation;
-    return before==after; /* bounded retry on the next main iteration */
+    if(before!=after)return 0; /* bounded retry on the next main iteration */
+    telemetry_consumed=after; /* audio owns/reset the measured peak accumulators */
+    return 1;
 }
 static int16_t next_sample(void *ctx) {
     int16_t value;xeno_render((Xeno *)ctx,&value,1);return value;
@@ -66,16 +71,20 @@ static int16_t next_sample(void *ctx) {
 static void app_audio(int32_t *out,uint32_t n) {
     uint32_t started=fm1_ticks(),peak=0;
     Command command=commands[command_slot];
+    if(telemetry_ack!=telemetry_consumed || command.panic || last_reset!=command.reset || last_panic!=command.panic_serial) {
+        telemetry_ack=telemetry_consumed;held_peak=0;
+        for(unsigned i=0;i<6;i++)held_meters[i]=0;
+    }
     if(!initialized || last_reset!=command.reset) {
         xeno_reset(&xeno,0x43594431u,command.material);vw_rate_clear(&rate);
         initialized=1;last_reset=command.reset;
     }
     xeno_controls(&xeno,command.excitation,command.damping,command.coupling);
     if(xeno.material!=command.material)xeno_material(&xeno,command.material);
-    if(command.panic) {xeno_panic(&xeno);vw_rate_clear(&rate);}
-    else if(command.strike!=last_strike && command.gate)xeno_strike(&xeno,command.note,command.velocity);
+    if(command.panic || command.panic_serial!=last_panic) {xeno_panic(&xeno);vw_rate_clear(&rate);}
+    if(!command.panic && command.strike!=last_strike && command.gate)xeno_strike(&xeno,command.note,command.velocity);
     if(!command.gate)xeno_release(&xeno);
-    last_strike=command.strike;
+    last_strike=command.strike;last_panic=command.panic_serial;
     if(!command.panic) for(uint32_t i=0;i<n;i++) {
         int32_t value=vw_rate_step(&rate,next_sample,&xeno);
         uint32_t magnitude=(uint32_t)(value<0?-value:value);
@@ -87,8 +96,13 @@ static void app_audio(int32_t *out,uint32_t n) {
     *state=(CydState){0};state->values[0]=xeno.excitation;state->values[1]=xeno.damping;
     state->values[2]=xeno.coupling;state->values[3]=(uint8_t)(((unsigned)xeno.material*127u+1u)/3u);
     state->preset=command.preset;state->note=xeno.note;state->gate=xeno.held;
-    state->revision=(uint16_t)(command.version&16383u);state->output_peak=(uint8_t)(peak*127u/32768u);
-    for(unsigned i=0;i<6;i++)state->meters[i]=(uint8_t)(xeno_mode_level(&xeno,i)*127u/131070u);
+    if(peak>held_peak)held_peak=peak;
+    state->revision=(uint16_t)(command.version&16383u);state->output_peak=(uint8_t)(held_peak*127u/32768u);
+    for(unsigned i=0;i<6;i++) {
+        uint8_t level=(uint8_t)(xeno_mode_level(&xeno,i)*127u/131070u);
+        if(level>held_meters[i])held_meters[i]=level;
+        state->meters[i]=held_meters[i];
+    }
     RING_PUBLISH();observation_slot=next;observation_generation++;applied_version=command.version;
     uint32_t elapsed=fm1_ticks()-started;
     if(elapsed>target_audio_max_ticks)target_audio_max_ticks=elapsed;
@@ -113,7 +127,7 @@ static void companion_service(void) {
     const uint8_t *body;uint32_t length;
     cyd_endpoint_tick(&endpoint,fm1_ms);
     if(queued_size) {
-        if(!try_reply(queued_reply,queued_size))return;
+        if(!try_reply(queued_reply,queued_size)){target_reply_deferrals++;return;}
         queued_size=0;
     }
     if(ota_frame_get(&body,&length) && length>=3 && body[0]==0x7d && body[1]=='C' && body[2]=='Y') {
@@ -133,6 +147,10 @@ static void app_main(void) {
     commands[0]=desired;commands[1]=desired;
     cyd_endpoint_init(&endpoint,2,0,apply,read_state); /* this build is emulator-only */
     publish();
+    draw_text_box(0,16,240,&FONT_L,"XENO CYDAUX",C_WHITE,1);
+    draw_text_box(0,118,240,&FONT_S,"USB CY1 / STANDALONE",C_WHITE,1);
+    draw_text_box(0,170,240,&FONT_S,"KEY STRIKE / K1 DAMP",C_WHITE,1);
+    draw_text_box(0,208,240,&FONT_S,"SEL MATERIAL / HOME MUTE",C_WHITE,1);
     for(;;) {
         companion_service();platform_poll();
         uint32_t released,buttons=fm1_input_edges(&released),keys=fm1_in.notes;
@@ -150,13 +168,9 @@ static void app_main(void) {
             int32_t value=(int32_t)desired.damping+turn;if(value<0)value=0;if(value>127)value=127;
             uint8_t p[2]={1,(uint8_t)value};apply(0,CYD_SET_PARAMETER,p);
         }
-        if(desired.version!=shown) {
-            draw_text_box(0,16,240,&FONT_L,"XENO CYDAUX",C_WHITE,1);
+        if(desired.material!=shown) {
             draw_text_box(0,70,240,&FONT_S,desired.material==0?"CERAMIC":desired.material==1?"WOODGLASS":desired.material==2?"ALIEN METAL":"MEMBRANE",C_WHITE,1);
-            draw_text_box(0,118,240,&FONT_S,"USB CY1 / STANDALONE",C_WHITE,1);
-            draw_text_box(0,170,240,&FONT_S,"KEY STRIKE / K1 DAMP",C_WHITE,1);
-            draw_text_box(0,208,240,&FONT_S,"SEL MATERIAL / HOME MUTE",C_WHITE,1);
-            shown=desired.version;
+            shown=desired.material;
         }
     }
 }
