@@ -11,6 +11,7 @@ DINGHY=92f17b28f2d05f2f78fd1b160b58475d518902c8
 MHAC=cc132a43b27c1d9f23bf50bca224567af49e208e
 EMU=736aded65c8e2e9d652cf595fca248734483a877
 CORE=03102e8d82148a6dba871024f5944246e0c913e2
+ECO=acdc41839665271372cd69df1d09f5550556c87e
 TC_SHA=cb896562418a2be93edb9bac26af4bc81a106a32974002a78e6b9fc203c93990
 checkout() {
   git init -q "$2"
@@ -64,11 +65,12 @@ rustup run 1.95.0 cargo build --release --locked -p fm1-emu --manifest-path "$TM
 EXE="$TMP/emu/target/release/fm1-emu"
 run_case() {
   local image="$1" name="$2" part="$3" note="$4"
+  local keys="${5:-600-700:N$note,900-1000:PLAY,3600-3700:HOME}"
   local dir="$TMP/run-$name"
   mkdir -p "$dir/work"
   (
     cd "$dir"
-    FM1_LCD_TIMED=1 timeout 300 "$EXE" --bin "$image" --entry 0x02000120 --ms 4500 --keys "600-700:N$note,900-1000:PLAY,3600-3700:HOME" --flash-chip "$part" --wav "$RES/$name.wav" --quiet
+    FM1_LCD_TIMED=1 timeout 300 "$EXE" --bin "$image" --entry 0x02000120 --ms 4500 --keys "$keys" --flash-chip "$part" --wav "$RES/$name.wav" --quiet
   ) > "$RES/$name.log" 2>&1
   python3 "$TMP/mhac/emulator-qualification-001/analyze_wav.py" "$RES/$name.wav" --require-audio --silent-tail-ms 500 | tee "$RES/$name.json"
   # Ensure a substantial capture, not a truncated file that happens to end in silence.
@@ -87,3 +89,31 @@ if cmp -s "$RES/orbit-n3.wav" "$RES/orbit-n9.wav"; then
 fi
 echo "actual reference control + Grimoire PCM repeat, alternate flash model, pitch contrast and HOME tail PASS" | tee "$RES/result.txt"
 # No executable or raw XIP uploads until combined distribution rights are resolved.
+
+# Second consumer; retain all first-consumer and reference gates above.
+checkout https://github.com/techrote/FM-1-VIBEWARE.git "$TMP/eco-core" "$ECO"
+ENGINE="$TMP/eco-core/instruments/ecophon"
+printf 'ecophon_core=%s\n' "$ECO" >> "$RES/pins.txt"
+for cc in gcc clang; do
+  "$cc" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -O2 -I"$ENGINE" "$HERE/test_ecophon_runtime.c" "$ENGINE/ecophon.c" -o "$TMP/test-eco"
+  "$TMP/test-eco" | tee "$RES/ecophon-adapter-$cc.txt"
+done
+cp "$HERE/ecophon_app.c" firmware/src/dinghy.c
+"$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffunction-sections -fno-builtin -Wall -Wno-unused-function -Ifirmware/hal -Ifirmware/src -Ifirmware/gen -I"$ENGINE" -I"$HERE" -DAPP_VER='"dev"' -DFELUCCA_ID='"FM-1_990"' -c firmware/src/dinghy.c -o "$TMP/eco-app.o"
+"$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffreestanding -fno-builtin -ffunction-sections -I"$HERE/include" -Wall -Wextra -Werror -c "$ENGINE/ecophon.c" -o "$TMP/eco.o"
+"$TC/ld.lld" --gc-sections -e _start -T firmware/app.ld -Map="$RES/ecophon.map" "$TMP/crt0.o" "$TMP/fm1_vec.o" "$TMP/fm1_isr.o" "$TMP/eco-app.o" "$TMP/eco.o" -o "$TMP/ecophon.elf"
+"$TC/llvm-readelf" -h -l "$TMP/ecophon.elf" | tee "$RES/ecophon-elf.txt"
+"$TC/llvm-size" -A "$TMP/ecophon.elf" | tee "$RES/ecophon-size.txt"
+test -z "$("$TC/llvm-nm" -u "$TMP/ecophon.elf")"
+python3 "$HERE/elf_xip.py" "$TMP/ecophon.elf" "$TMP/ecophon.xip.bin" | tee "$RES/ecophon-xip.json"
+run_case "$TMP/ecophon.xip.bin" eco-low p25q80 3
+run_case "$TMP/ecophon.xip.bin" eco-low-repeat p25q80 3
+run_case "$TMP/ecophon.xip.bin" eco-high p25q80 24
+run_case "$TMP/ecophon.xip.bin" eco-scarcity p25q80 3 "350-450:SEL,600-700:N3,900-1000:PLAY,3600-3700:HOME"
+cmp "$RES/eco-low.wav" "$RES/eco-low-repeat.wav"
+for other in eco-high eco-scarcity; do
+  if cmp -s "$RES/eco-low.wav" "$RES/$other.wav"; then
+    echo "FAIL: Ecophon panel control aliased: $other" >&2; exit 1
+  fi
+done
+echo "Ecophon actual target PCM repeat, pressure and preset contrast, HOME tail PASS" | tee "$RES/ecophon-result.txt"
