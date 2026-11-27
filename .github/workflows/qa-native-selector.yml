@@ -1,7 +1,7 @@
 name: QA Windows native selector
 on:
   pull_request:
-    paths: ['catalogue/selector.py','catalogue/native-packages.json','.github/workflows/qa-native-selector.yml']
+    paths: ['catalogue/selector.py','catalogue/test_selector.py','catalogue/native-packages.json','.github/workflows/qa-native-selector.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,13 +28,13 @@ jobs:
           set -euo pipefail
           mkdir -p 'downloaded archives'
           python catalogue/selector.py
-          for entry in chronomorph:15224186300 ecophon:15224337693 xenoresonator:15222813934 grimoire:15224732379; do
-            instrument=${entry%%:*}
-            id=${entry##*:}
+          python catalogue/test_selector.py
+          python -c 'import json; p=json.load(open("catalogue/native-packages.json"))["packages"]; assert len(p)==4 and len({x["id"] for x in p})==4 and all(x["qa_run"] for x in p); print("\n".join(str(x["id"])+" "+str(x["artifact"]) for x in p))' > selector-pins.txt
+          while read -r instrument id; do
             gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "downloaded archives/$instrument.zip"
             python catalogue/selector.py "$instrument" "downloaded archives/$instrument.zip" --verify
-            python catalogue/selector.py "$instrument" "downloaded archives/$instrument.zip" --probe --allow-provisional
-          done
+            python catalogue/selector.py "$instrument" "downloaded archives/$instrument.zip" --probe
+          done < selector-pins.txt
       - name: Stage source-only selector
         run: |
           mkdir -p selector

@@ -18,6 +18,13 @@ import zipfile
 BASE="https://github.com/techrote/FM-1-VIBEWARE"
 LIMIT=50_000_000
 CACHE="__pycache__/host.cpython-312.pyc"
+ECO_PAYLOADS=frozenset((
+    "performances/habitat-arc.wav", "performances/steady-control.wav",
+    "performances/frozen-control.wav", "performances/performance.json",
+    "performances/companion-replay.json", "feedback/population-feedback.wav",
+    "feedback/population-steady.wav", "feedback/population-feedback.json",
+    "feedback/population-steady.json", "feedback/population-summary.json",
+))
 
 def catalogue():
     d=json.loads(Path(__file__).with_name("native-packages.json").read_text(encoding="utf-8"))
@@ -36,6 +43,8 @@ def verified_extract(archive,dest,p):
         if sum(i.file_size for i in infos)>LIMIT or len(infos)>200:
             raise ValueError("Expanded archive exceeds bounds")
         seen=set()
+        allowed_nested=ECO_PAYLOADS if p["id"]=="ecophon" else frozenset()
+        found_nested=set()
         for i in infos:
             name=i.filename
             key=name.casefold()
@@ -44,15 +53,26 @@ def verified_extract(archive,dest,p):
             seen.add(key)
             if p["id"]=="grimoire" and name==CACHE:
                 continue
+            if name in allowed_nested:
+                if stat.S_ISLNK(i.external_attr>>16) or i.is_dir():
+                    raise ValueError("Unexpected nested archive entry: "+name)
+                found_nested.add(name)
+                target=dest/name
+                target.parent.mkdir(exist_ok=True)
+                with target.open("xb") as f:
+                    f.write(z.read(i))
+                continue
             if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*",name)
                 or name.endswith(".") or stat.S_ISLNK(i.external_attr>>16)
                 or name.split(".")[0].upper() in {"CON","PRN","AUX","NUL",*[f"COM{x}" for x in range(1,10)],*[f"LPT{x}" for x in range(1,10)]}):
                 raise ValueError("Unexpected archive entry: "+name)
             with (dest/name).open("xb") as f:
                 f.write(z.read(i))
+        if found_nested!=allowed_nested:
+            raise ValueError("Missing required Ecophon payload")
     if not all((dest/p[k]).is_file() for k in ("entry","library")):
         raise ValueError("Missing entrypoint or library")
-    return sorted(x.name for x in dest.glob("*.wav"))
+    return sorted(x.relative_to(dest).as_posix() for x in dest.rglob("*.wav"))
 
 def url_for(p):
     return f"{BASE}/actions/runs/{p['run']}/artifacts/{p['artifact']}"
