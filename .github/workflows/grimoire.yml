@@ -55,6 +55,19 @@ jobs:
           python -m pip install playwright==1.57.0
           python -m playwright install --with-deps chromium
           python "extracted Orbit Gate/test_browser.py" "extracted Orbit Gate/orbit.so" --screenshot out/orbit-gate.png
+      - name: Orbit Ribbon actual-core comparative performance
+        run: |
+          mkdir -p ribbon-out
+          if [ "$RUNNER_OS" = Windows ]; then flags=""; else flags="-fsanitize=undefined -fno-sanitize-recover=all"; fi
+          gcc -std=c11 -Wall -Wextra -Werror -O2 $flags instruments/grimoire/orbit.c companion/grimoire/session.c instruments/grimoire/ribbon.c -o out/ribbon-test
+          ./out/ribbon-test ribbon-out/ribbon.wav ribbon-out/fixed-y.wav ribbon-out/ribbon.csv
+          rm out/ribbon-test*
+          python -c "import hashlib,pathlib; p=pathlib.Path('ribbon-out'); expected={'ribbon.wav':'656e0005c1bf3f3938e1e53421eb08388a6277a7ac4459fcb4055be6cd4d8c00','fixed-y.wav':'f177381f4a167347d7c6f02697bb1a4bfb23b06b77b1b696638e56764459b8f8','ribbon.csv':'1330ce29c3fb722095acdf3af217032b2d1beb3473e4007a2414b46678adafaf'}; assert all(hashlib.sha256((p/n).read_bytes()).hexdigest()==h for n,h in expected.items()), 'ribbon hash mismatch'"
+          cp instruments/grimoire/ribbon.c ribbon-out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grimoire-ribbon-${{ matrix.os }}
+          path: ribbon-out/
       - uses: actions/upload-artifact@v4
         with:
           name: grimoire-${{ matrix.os }}
