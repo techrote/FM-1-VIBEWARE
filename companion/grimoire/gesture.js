@@ -14,12 +14,26 @@ class GestureQueue {
 }
 class OrbitRibbon {
   static path=[[24,18],[48,48],[84,110],[108,76],[72,26],[36,98],[12,120],[36,46]];
+  // Local musical shapes, not a new device command. All share the 256-tick cycle.
+  static shapes=Object.freeze({
+    ribbon:OrbitRibbon.path,
+    crown:[[24,96],[44,104],[66,112],[88,120],[104,112],[88,104],[66,96],[44,104]],
+    pendulum:[[32,24],[48,30],[80,42],[96,48],[80,42],[48,30],[32,24],[24,30]]
+  });
+  get path(){return OrbitRibbon.shapes[this.shape];}
+  setShape(shape){
+    if(!Object.hasOwn(OrbitRibbon.shapes,shape))throw RangeError('ribbon shape');
+    if(this.shape===shape)return;
+    this.shape=shape;
+    if(this.speed&&!this.manual)this.beginBlend();
+  }
+  beginBlend(){this.blend=8;this.fromX=this.x;this.fromY=this.y;}
   constructor(){this.reset();}
-  reset(){this.speed=0;this.phase=0;this.carry=0;this.manual=false;this.blend=0;this.x=24;this.y=18;this.fromX=24;this.fromY=18;}
+  reset(){this.shape='ribbon';this.speed=0;this.phase=0;this.carry=0;this.manual=false;this.blend=0;this.x=24;this.y=18;this.fromX=24;this.fromY=18;}
   setSpeed(speed){if(![1,2,4].includes(speed))throw RangeError('ribbon speed');this.speed=speed;}
   take(x,y){if(![x,y].every(v=>Number.isInteger(v)&&v>=0&&v<=127))throw RangeError('ribbon XY');this.manual=true;this.blend=0;this.x=x;this.y=y;}
-  resume(){if(this.manual){this.manual=false;this.blend=8;this.fromX=this.x;this.fromY=this.y;}}
-  tick(){const i=this.phase>>5,k=this.phase%32,p=OrbitRibbon.path[i],q=OrbitRibbon.path[(i+1)%8];
+  resume(){if(this.manual){this.manual=false;this.beginBlend();}}
+  tick(){const i=this.phase>>5,k=this.phase%32,p=this.path[i],q=this.path[(i+1)%8];
     const lerp=(a,b,n,d)=>Math.floor((a*(d-n)+b*n+d/2)/d);
     const x=lerp(p[0],q[0],k,32),y=lerp(p[1],q[1],k,32);
     if(!this.manual){if(this.blend){const n=9-this.blend;this.x=lerp(this.fromX,x,n,8);this.y=lerp(this.fromY,y,n,8);this.blend--;}else{this.x=x;this.y=y;}}

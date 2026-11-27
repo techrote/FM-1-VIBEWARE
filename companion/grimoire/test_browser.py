@@ -49,6 +49,7 @@ def run(library, executable, screenshot):
                     page.wait_for_function('''() => {if(peak() >= .0001){quietSince=null;return false}
                       if(quietSince===null)quietSince=performance.now();return performance.now()-quietSince>200}''', timeout=5000)
                 def gesture():
+                    page.locator('#pad').scroll_into_view_if_needed()
                     box = page.locator('#pad').bounding_box()
                     page.mouse.move(box['x'] + box['width']*.25, box['y'] + box['height']*.3)
                     page.mouse.down()
@@ -67,6 +68,13 @@ def run(library, executable, screenshot):
                 page.wait_for_function('played && played.gate===1 && peak()>.02')
                 page.evaluate('window.ribbonFirstX=played.x')
                 page.wait_for_function('played.gate===1 && played.x!==ribbonFirstX')
+                # Changing the trajectory must keep the explicitly held gate and
+                # advance the same clock; verify the bright arc via played native XY.
+                page.locator('#ribbonShape').select_option('crown')
+                page.wait_for_function('held && ribbon.shape==="crown" && ribbon.blend===0 && played.gate===1 && played.y>=96 && played.y<=120 && peak()>.02')
+                page.locator('#ribbonShape').select_option('pendulum')
+                page.wait_for_function('held && ribbon.shape==="pendulum" && ribbon.blend===0 && played.gate===1 && played.y>=24 && played.y<=48 && peak()>.02')
+                page.locator('#pad').scroll_into_view_if_needed()
                 box = page.locator('#pad').bounding_box()
                 page.mouse.move(box['x']+box['width']*.95,box['y']+box['height']*.95)
                 page.mouse.down()
@@ -83,6 +91,7 @@ def run(library, executable, screenshot):
                 silence()
                 assert page.locator('#holdGate').is_disabled()
                 assert page.locator('#ribbonSpeed').input_value()=='0'
+                assert page.locator('#ribbonShape').input_value()=='ribbon'
                 gesture()
                 if screenshot:
                     page.screenshot(path=screenshot)

@@ -26,3 +26,37 @@ function checkRibbon(R){
  return count;
 }
 console.log('Orbit Ribbon: '+checkRibbon(GestureQueue.Ribbon)+' sample-clock blocks, manual takeover, blend, reset and input rejection PASS');
+
+function checkShapes(R){
+  const assert=(c,m)=>{if(!c)throw Error(m);};
+  let blocks=0;
+  const signatures=new Set();
+  for(const shape of ['ribbon','crown','pendulum']){
+    for(const speed of [1,2,4]){
+      const r=new R(), points=[];r.setShape(shape);r.setSpeed(speed);
+      for(let b=0;b<512;b++){
+        const [x,y]=r.block();blocks++;
+        assert(x>=0&&x<=127&&y>=0&&y<=127,'shape bounds');
+        if(shape==='crown')assert(y>=96&&y<=120,'crown register');
+        if(shape==='pendulum')assert(y>=24&&y<=48,'pendulum register');
+        assert(r.phase===Math.floor((b+1)*5/2)*speed%256,'shape clock');
+        points.push([x,y]);
+      }
+      signatures.add(JSON.stringify(points));
+    }
+  }
+  assert(signatures.size===9,'distinct shape and speed traces');
+  const r=new R();r.setSpeed(2);for(let i=0;i<20;i++)r.block();
+  const [x,y,phase,carry]=[r.x,r.y,r.phase,r.carry];r.setShape('crown');
+  assert(r.blend===8&&r.x===x&&r.y===y&&r.phase===phase&&r.carry===carry,'shape transition preserves clock and starting point');
+  for(let i=0;i<4;i++)r.block();assert(r.blend===0&&r.y>=96,'shape blend completion');
+  r.take(127,0);r.setShape('pendulum');for(let i=0;i<4;i++)assert(r.block()===null&&r.x===127&&r.y===0,'manual owns XY during shape change');
+  r.resume();for(let i=0;i<4;i++)r.block();assert(r.blend===0&&r.y>=24&&r.y<=48,'manual blend resumes selected shape');
+  r.reset();assert(r.shape==='ribbon'&&r.speed===0&&r.phase===0&&r.block()===null,'panic reset shape');
+  for(const invalid of ['unknown','__proto__','constructor',null,1]){
+    let rejected=false;try{r.setShape(invalid)}catch{rejected=true}
+    assert(rejected&&r.shape==='ribbon','invalid shape rejected atomically');
+  }
+  return blocks;
+}
+console.log('Orbit Ribbon shapes: '+checkShapes(GestureQueue.Ribbon)+' blocks, 9 distinct trajectories, bounded phase-preserving blend and reset PASS');
