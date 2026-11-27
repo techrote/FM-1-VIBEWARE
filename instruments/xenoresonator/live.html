@@ -6,6 +6,8 @@
 <div id="xy" aria-label="Excitation and damping XY surface"><span id="dot"></span></div>
 <label>Coupling <input type="range" id="c" min="0" max="127" value="90"></label><label>Pitch <input type="range" id="n" min="36" max="84" value="48"></label><label>Velocity <input type="range" id="v" min="1" max="127" value="110"></label>
 <button id="start">Start audio</button> <button id="strike" disabled>Hold to strike</button> <button id="stop">Panic / stop</button>
+<p><small>Chromatic keys: focus Hold to strike (automatically focused after Start audio). Z S X D C V G B H N J M , = C through C. One held note at a time; release before the next note.</small></p>
+<label>Keyboard octave <select id="octave"><option value="36">C2–C3</option><option value="48" selected>C3–C4</option><option value="60">C4–C5</option><option value="72">C5–C6</option></select></label>
 <p id="status" role="status">Stopped</p><div id="modes" aria-hidden="true"><div></div><div></div><div></div><div></div><div></div><div></div></div><p><small>Body A (teal), body B (ochre): actual local modal magnitude proxies sampled within each audio block. Not device telemetry. XY and material changes affect the live decay. No MIDI or device connection.</small></p>
 <script>
 const $=id=>document.getElementById(id), bars=[...$('modes').children];
@@ -23,7 +25,7 @@ function queue(event){if(!active)return;if(events.length>=8){stop('Gesture overf
 async function start(){if(opening||active)return;opening=true;$('start').disabled=true;const g=++epoch;
   try{ctx??=new AudioContext();await ctx.resume();const opened=await post('/open',{version:1});
     if(g!==epoch){await post('/panic',{token:opened.token}).catch(()=>{});return;}
-    token=opened.token;seq=0;gaps=0;next=ctx.currentTime+.08;active=true;$('strike').disabled=false;$('status').textContent='Live';pump(g);
+    token=opened.token;seq=0;gaps=0;next=ctx.currentTime+.08;active=true;$('strike').disabled=false;$('strike').focus();$('status').textContent='Live';pump(g);
   }catch(e){if(g===epoch)stop(String(e));}finally{opening=false;$('start').disabled=active;}}
 async function pump(g){try{while(active&&epoch===g){
   if(next-ctx.currentTime>.10){await sleep(10);continue;}
@@ -41,8 +43,11 @@ $('start').onclick=start;$('stop').onclick=()=>stop();
 let pointer=null,heldKey=null;const strike=$('strike');strike.onpointerdown=e=>{if(pointer!==null||heldKey!==null||!active)return;pointer=e.pointerId;strike.setPointerCapture(pointer);queue(1);};
 function release(e){if(e.pointerId!==pointer)return;pointer=null;queue(2);}strike.onpointerup=release;strike.onpointercancel=release;strike.onlostpointercapture=release;
 function releaseKey(){if(heldKey===null)return;heldKey=null;queue(2);}
-strike.onkeydown=e=>{if(e.key!==' '&&e.key!=='Enter')return;e.preventDefault();if(e.repeat||heldKey!==null||pointer!==null||!active)return;heldKey=e.key;queue(1);};
-strike.onkeyup=e=>{if(e.key!==' '&&e.key!=='Enter')return;e.preventDefault();if(e.key===heldKey)releaseKey();};
+const chromatic=['KeyZ','KeyS','KeyX','KeyD','KeyC','KeyV','KeyG','KeyB','KeyH','KeyN','KeyJ','KeyM','Comma'];
+function keyIdentity(e){return e.key===' '||e.key==='Enter'?e.key:chromatic.includes(e.code)?e.code:null;}
+strike.onkeydown=e=>{const key=keyIdentity(e);if(key===null||e.ctrlKey||e.altKey||e.metaKey)return;e.preventDefault();if(e.repeat||heldKey!==null||pointer!==null||!active)return;
+  const semitone=chromatic.indexOf(key);if(semitone>=0)$('n').value=Number($('octave').value)+semitone;heldKey=key;queue(1);};
+strike.onkeyup=e=>{const key=keyIdentity(e);if(key===null)return;e.preventDefault();if(key===heldKey)releaseKey();};
 strike.onblur=releaseKey;
 function dot(){$('dot').style.left=Number($('e').value)/127*100+'%';$('dot').style.top=(1-Number($('d').value)/127)*100+'%';}dot();$('e').oninput=dot;$('d').oninput=dot;
 function xy(e){const r=$('xy').getBoundingClientRect(),clamp=v=>Math.max(0,Math.min(127,Math.round(v*127)));$('e').value=clamp((e.clientX-r.left)/r.width);$('d').value=clamp(1-(e.clientY-r.top)/r.height);dot();}
