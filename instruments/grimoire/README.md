@@ -22,3 +22,7 @@ The 320×240 instrument fixture now schedules native end-of-block snapshots agai
 ## Browser recovery and staged-package gate
 
 Run 46044975162 failed before browser execution because ubuntu-latest became Ubuntu 26.04, unsupported by pinned Playwright 1.57.0. Pin Ubuntu 24.04 and keep both matrix jobs independent. Re-run native fixture from a staged path containing spaces; the browser test also launches from this path, measures a destination-routed Web Audio analyser and checks actual played XY/preset snapshots rather than generated-ahead state. The independent QA virtual rerun (46045927224) is green; local and actual companion-device telemetry remain distinct. These changes do not change the core or session ABI.
+
+## Orbit Passage — sustained gesture fixture
+
+`performance.c` exercises the existing local session and renders an authored 12-second phrase across Amber, Iron and Abyss. Each material holds a gate while pitch and Y change, releases, then panics before the next material. The fixture checks all 128 X values per material against the 24-step pitch lattice, monotonic carrier increments, exact phase/envelope continuity at XY events, causal Y PCM differences at identical phase, silence, headroom and deterministic repetition. Build as in CI (same core and session, performance.c instead of test.c); run with an output WAV path. This is host evidence for common CYDaux gesture semantics, not device transport, and adds no core ABI or wire command. The original three preset WAVs remain separate.
