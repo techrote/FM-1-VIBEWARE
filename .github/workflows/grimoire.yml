@@ -29,11 +29,13 @@ jobs:
           gcc -std=c11 -Wall -Wextra -Werror -O2 $flags instruments/grimoire/orbit.c companion/grimoire/session.c instruments/grimoire/performance.c -o out/performance
           ./out/performance out/orbit-passage.wav
           gcc -std=c11 -Wall -Wextra -Werror -O2 -shared $flags instruments/grimoire/orbit.c companion/grimoire/session.c -o out/orbit.$ext
+          python companion/grimoire/replay.py out/orbit.$ext out/orbit-passage.wav out/orbit-replay.json
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('out/orbit-replay.json').read_bytes()).hexdigest() == '6793ac69399a826931713f01375803bafceab3ad99c9308774689362761db43a'"
           python companion/grimoire/smoke.py out/orbit.$ext
           node companion/grimoire/test_gesture.cjs
           node companion/grimoire/test_visual.cjs
           python -c "import hashlib,pathlib; p=pathlib.Path('out'); [(print(f.name,hashlib.sha256(f.read_bytes()).hexdigest())) for f in sorted(p.glob('*.wav'))]"
-          cp companion/grimoire/{host.py,index.html,smoke.py,gesture.js,profile.json,test_gesture.cjs,test_visual.cjs,test_browser.py} out/
+          cp companion/grimoire/{host.py,index.html,smoke.py,replay.py,gesture.js,profile.json,test_gesture.cjs,test_visual.cjs,test_browser.py} out/
           python out/smoke.py out/orbit.$ext
           node out/test_gesture.cjs
           node out/test_visual.cjs
