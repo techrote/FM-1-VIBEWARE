@@ -1,0 +1,36 @@
+name: Grimoire native audition
+on:
+  pull_request:
+    paths: ['instruments/grimoire/**','companion/grimoire/**','.github/workflows/grimoire.yml']
+  push:
+    branches: ['hybrid/grimoire-001']
+  workflow_dispatch:
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and run actual core
+        run: |
+          mkdir -p out
+          if [ "$RUNNER_OS" = Windows ]; then ext=dll; flags=""; else ext=so; flags="-fPIC -fsanitize=undefined -fno-sanitize-recover=all"; fi
+          gcc -std=c11 -Wall -Wextra -Werror -O2 $flags instruments/grimoire/orbit.c companion/grimoire/session.c instruments/grimoire/test.c -o out/test
+          ./out/test out/amber.wav out/iron.wav out/abyss.wav
+          gcc -std=c11 -Wall -Wextra -Werror -O2 -shared $flags instruments/grimoire/orbit.c companion/grimoire/session.c -o out/orbit.$ext
+          python companion/grimoire/smoke.py out/orbit.$ext
+          python -c "import hashlib,pathlib; p=pathlib.Path('out'); [(print(f.name,hashlib.sha256(f.read_bytes()).hexdigest())) for f in sorted(p.glob('*.wav'))]"
+          cp companion/grimoire/{host.py,index.html,smoke.py} out/
+          python out/smoke.py out/orbit.$ext
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grimoire-${{ matrix.os }}
+          path: out/
