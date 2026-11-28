@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      CYDAUX_REF: ${{ inputs.cydaux_ref || 'bd59d3fc7083b48954a48f50a7f964f781e61ba8' }}
+      CYDAUX_REF: ${{ inputs.cydaux_ref || 'ffdc41b825858ef34f4dcd040fe86b6b652a49e1' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 50
     env:
       VIBEWARE_USB_INSTRUMENT: grimoire
-      CYDAUX_REF: bd59d3fc7083b48954a48f50a7f964f781e61ba8
+      CYDAUX_REF: ffdc41b825858ef34f4dcd040fe86b6b652a49e1
     steps:
       - uses: actions/checkout@v4
         with:
