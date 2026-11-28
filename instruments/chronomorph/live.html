@@ -1,0 +1,177 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chronomorph live</title>
+<style>body{font:16px system-ui;background:#141822;color:#e8e6db;max-width:760px;margin:1rem auto;padding:0 1rem}fieldset{border:1px solid #505d70;margin:1rem 0}label{display:inline-block;margin:.45rem}input[type=number]{width:5rem}button,select{padding:.5rem} .steps{display:flex;gap:4px;flex-wrap:wrap}.steps button{background:#293143;color:white;border:1px solid #65748d;min-width:32px}.steps button.on{background:#c69b52;color:#141822}.steps button.current{outline:3px solid #77d5ce}output{display:block;white-space:pre-wrap}</style>
+<h1>Chronomorph — live clocks</h1><p>Actual local native engine. Edit patterns and warp while playing. Clock markers are sampled local state, not device telemetry.</p>
+<label>Composition <select id="preset"><option>Glass Lattice</option><option>Broken Meridian</option><option>Slow Eclipse</option></select></label>
+<label>BPM <input id="bpm" type="number" min="40" max="220"></label><label>Warp <input id="warp" type="number" min="-60" max="60"></label><label>Variation <input id="variation" type="number" min="0" max="100" value="12"></label><label>Seed <input id="seed" type="number" min="1" max="2147483647" value="17"></label>
+<button id="start">Start / resume</button> <button id="pause">Pause</button> <button id="reset">Reset composition</button> <button id="panic" aria-keyshortcuts="Escape">Panic / disconnect</button><output id="status" aria-live="polite">Stopped</output><div id="lanes"></div><fieldset><legend>Performance scenes</legend><p>Capture tempo, warp, variation and all three patterns; recall without restarting clocks. Four in-memory slots; export/import scene JSON to keep or share them. Seed, preset and transport are not recalled. Press 1–4 outside text/number fields to recall; Escape disconnects even while editing. The factory set fills empty slots only.</p><button id="factoryScenes" type="button">Fill empty slots: Lattice Variations</button> <div id="scenes"></div><p><button id="performScore" type="button">Perform Lattice Variations</button> <button id="performBank" type="button">Perform saved scenes</button> <label>Seconds per saved scene <input id="cueSeconds" type="number" min="1" max="10" step="1" value="5"></label> <button id="cancelScore" type="button">Take manual control</button></p><output id="scoreStatus" aria-live="polite">Score idle — start the engine first. Factory score: four 5-second cues. Saved scenes: occupied slots in order, 1–10 seconds each. Both preserve clocks and auto-pause.</output><label for="sceneExchange">Scene bank JSON</label><textarea id="sceneExchange" maxlength="2048" rows="4" style="display:block;width:95%;font:12px monospace" spellcheck="false"></textarea><button id="exportScenes" type="button">Export scenes</button> <button id="importScenes" type="button">Import scenes</button><output id="sceneStatus" aria-live="polite">No scene saved</output></fieldset>
+<script>
+const $=id=>document.getElementById(id), presets=[[112,24,[7,5,11],[73,21,1321]],[142,-32,[5,9,7],[21,297,85]],[84,48,[9,7,13],[293,73,4693]]];
+let lens=[],masks=[],token=null,seq=0,gen=0,playEpoch=0,playing=0,ctx=null,next=0,sources=new Set(),visual=[],timer=null,inflight=null;
+function clamp(id,lo,hi){const x=Number($(id).value);return Number.isFinite(x)?Math.max(lo,Math.min(hi,Math.round(x))):lo}
+function rotatePattern(mask,n,delta){const limit=(1<<n)-1;mask&=limit;return delta>0?((mask<<1)|(mask>>>(n-1)))&limit:((mask>>>1)|((mask&1)<<(n-1)))&limit}
+function spreadPattern(n,hits){let mask=0;for(let j=0;j<n;j++)if((j*hits)%n<hits)mask|=1<<j;return mask}
+function grid(){ $('lanes').replaceChildren(); ['Bass / master','Bell / elastic','Dust / counterclock'].forEach((name,i)=>{const f=document.createElement('fieldset'),l=document.createElement('legend');l.textContent=name;f.append(l);const length=document.createElement('input');length.type='number';length.min=1;length.max=16;length.value=lens[i];length.setAttribute('aria-label',name+' cycle length');length.onchange=()=>{lens[i]=Math.max(1,Math.min(16,Math.round(Number(length.value))||1));masks[i]&=(1<<lens[i])-1;grid()};f.append('Steps ',length);
+const density=document.createElement('input');density.type='number';density.min=0;density.max=lens[i];density.value=masks[i].toString(2).replace(/0/g,'').length;density.setAttribute('aria-label',name+' hits');
+const action=(label,run)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('aria-label',name+' '+label);b.onclick=()=>{run();grid()};return b};
+f.append(' Hits ',density,' ',action('Spread hits',()=>{const k=Math.max(0,Math.min(lens[i],Math.round(Number(density.value))||0));masks[i]=spreadPattern(lens[i],k)}),' ',action('Rotate left',()=>{masks[i]=rotatePattern(masks[i],lens[i],-1)}),' ',action('Rotate right',()=>{masks[i]=rotatePattern(masks[i],lens[i],1)}));const row=document.createElement('div');row.className='steps';row.id='lane'+i;for(let j=0;j<lens[i];j++){const b=document.createElement('button');b.textContent=j+1;b.className=(masks[i]>>j)&1?'on':'';b.setAttribute('aria-pressed',String(!!((masks[i]>>j)&1)));b.onclick=()=>{masks[i]^=1<<j;grid()};row.append(b)}f.append(row);$('lanes').append(f)})}
+function load(){const p=presets[$('preset').selectedIndex];$('bpm').value=p[0];$('warp').value=p[1];lens=p[2].slice();masks=p[3].slice();grid()}
+load();
+function makeSceneBank(){
+  let slots=Array(4).fill(null);
+  const format="chronomorph-scenes",version=1,maxChars=2048;
+  function copy(s){return {bpm:s.bpm,warp:s.warp,variation:s.variation,patterns:s.patterns.map(p=>p.slice())}}
+  function keys(s,expected){return s!==null&&typeof s==="object"&&!Array.isArray(s)&&Object.keys(s).sort().join(",")===expected}
+  function valid(s){
+    const int=(v,a,b)=>Number.isInteger(v)&&v>=a&&v<=b;
+    return keys(s,"bpm,patterns,variation,warp")&&int(s.bpm,40,220)&&int(s.warp,-60,60)&&int(s.variation,0,100)&&Array.isArray(s.patterns)&&s.patterns.length===3&&s.patterns.every(p=>Array.isArray(p)&&p.length===2&&int(p[0],1,16)&&int(p[1],0,(1<<p[0])-1));
+  }
+  function index(i){if(!Number.isInteger(i)||i<0||i>=4)throw new RangeError("scene slot")}
+  return {
+    save(i,s){index(i);if(!valid(s))throw new RangeError("scene controls");slots[i]=copy(s)},
+    recall(i){index(i);return slots[i]===null?null:copy(slots[i])},
+    exportText(){return JSON.stringify({format,version,slots},null,2)},
+    importText(raw){
+      if(typeof raw!=="string"||raw.length>maxChars)throw new RangeError("scene bank size");
+      const bank=JSON.parse(raw);
+      if(!keys(bank,"format,slots,version")||bank.format!==format||bank.version!==version||
+         !Array.isArray(bank.slots)||bank.slots.length!==4||
+         !bank.slots.every(s=>s===null||valid(s)))throw new RangeError("scene bank format or controls");
+      slots=bank.slots.map(s=>s===null?null:copy(s));
+    }
+  }
+}
+// Original authored performance cues; same validated local scene schema.
+function factoryCues(){
+  return [
+    {bpm:112,warp:24,variation:12,patterns:[[7,73],[5,21],[11,1321]]},
+    {bpm:124,warp:-36,variation:25,patterns:[[7,19],[5,11],[11,585]]},
+    {bpm:84,warp:48,variation:38,patterns:[[9,293],[7,73],[13,4693]]},
+    {bpm:72,warp:-12,variation:4,patterns:[[7,9],[5,4],[11,129]]}
+  ];
+}
+function fillFactoryScenes(bank){
+  const cues=factoryCues();
+  let filled=0;
+  for(let i=0;i<4;i++)if(bank.recall(i)===null){bank.save(i,cues[i]);filled++}
+  return filled;
+}
+function sceneShortcut(key,editing,repeat,modified,composing){
+  if(repeat||modified||composing)return null;
+  if(key==='Escape')return 'panic';
+  if(!editing&&/^[1-4]$/.test(key))return Number(key)-1;
+  return null;
+}
+// Validate and detach authored input. Native code owns cue selection,
+ // accepted-block advancement and completion; browser stores display progress only.
+function makeScoreRequest(slots,seconds){
+  if(!Array.isArray(slots)||slots.length!==4||!Number.isInteger(seconds)||seconds<1||seconds>10)
+    throw new RangeError('score bounds');
+  const bank=makeSceneBank();
+  slots.forEach((s,i)=>{if(s!==null)bank.save(i,s)});
+  const copy=Array.from({length:4},(_,i)=>bank.recall(i));
+  const cueCount=copy.filter(s=>s!==null).length;
+  if(!cueCount)throw new RangeError('empty score');
+  return {slots:copy,seconds,cueCount,total:cueCount*seconds*20,count:0,armed:false,lastSlot:null};
+}
+function makeLatticePerformance(){return makeScoreRequest(factoryCues(),5)}
+function makeBankPerformance(bank,seconds){
+  return makeScoreRequest(Array.from({length:4},(_,i)=>bank.recall(i)),seconds);
+}
+let score=null;
+function cancelScore(reason='Manual control'){
+  if(score){score=null;$('scoreStatus').textContent='Score cancelled — '+reason}
+}
+function applyScene(s){
+  $('bpm').value=s.bpm;$('warp').value=s.warp;$('variation').value=s.variation;
+  lens=s.patterns.map(p=>p[0]);masks=s.patterns.map(p=>p[1]);grid();
+}
+$('performScore').onclick=()=>{
+  if(score)return;
+  if(!token||!playing){$('scoreStatus').textContent='Start or resume the engine first';return}
+  score=makeLatticePerformance();$('scoreStatus').textContent='Score armed — next native block';
+};
+$('performBank').onclick=()=>{
+  if(score)return;
+  if(!token||!playing){$('scoreStatus').textContent='Start or resume the engine first';return}
+  try{
+    score=makeBankPerformance(sceneBank,Number($('cueSeconds').value));
+    $('scoreStatus').textContent='Saved score armed — '+score.cueCount+' frozen scene(s), '+score.total+' blocks';
+  }catch(e){$('scoreStatus').textContent='Saved score rejected — populate a slot and enter 1–10 whole seconds'}
+};
+$('cancelScore').onclick=()=>cancelScore();
+for(const id of ['bpm','warp','variation','seed'])$(id).addEventListener('input',()=>cancelScore());
+$('lanes').addEventListener('click',e=>{if(e.target.closest('button'))cancelScore()});
+$('lanes').addEventListener('input',()=>cancelScore());
+const sceneBank=makeSceneBank(),sceneRecallButtons=[];
+function sceneControls(){return {bpm:clamp('bpm',40,220),warp:clamp('warp',-60,60),variation:clamp('variation',0,100),patterns:lens.map((n,i)=>[n,masks[i]])}}
+for(let i=0;i<4;i++){
+  const save=document.createElement('button'),recall=document.createElement('button'),name='Scene '+(i+1);
+  save.type=recall.type='button';save.textContent='Save '+name;recall.textContent='Recall '+name;recall.setAttribute('aria-keyshortcuts',String(i+1));recall.disabled=true;
+  save.onclick=()=>{sceneBank.save(i,sceneControls());recall.disabled=false;$('sceneStatus').textContent=name+' saved'};
+  recall.onclick=()=>{const s=sceneBank.recall(i);if(!s)return;cancelScore();applyScene(s);$('sceneStatus').textContent=name+' recalled (clock and transport unchanged)'};
+  sceneRecallButtons.push(recall);$('scenes').append(save,recall,document.createTextNode(' '));
+}
+function refreshSceneButtons(){sceneRecallButtons.forEach((b,i)=>{b.disabled=sceneBank.recall(i)===null})}
+$('factoryScenes').onclick=()=>{
+  const n=fillFactoryScenes(sceneBank);refreshSceneButtons();
+  $('sceneStatus').textContent=n?'Lattice Variations: filled '+n+' empty slot(s) — recall to apply':'All slots occupied — no scenes changed';
+};
+window.addEventListener('keydown',e=>{
+  const editing=!!e.target?.closest?.('input,textarea,select,[contenteditable]');
+  const action=sceneShortcut(e.key,editing,e.repeat,e.ctrlKey||e.altKey||e.metaKey||e.shiftKey,e.isComposing);
+  if(action==='panic'){e.preventDefault();disconnect()}
+  else if(action!==null&&!sceneRecallButtons[action].disabled){e.preventDefault();sceneRecallButtons[action].click()}
+});
+$('exportScenes').onclick=()=>{$('sceneExchange').value=sceneBank.exportText();$('sceneStatus').textContent='Scene bank exported — copy the JSON to keep it'};
+$('importScenes').onclick=()=>{
+  try{
+    sceneBank.importText($('sceneExchange').value);
+    refreshSceneButtons();
+    $('sceneStatus').textContent='Scene bank imported — recall a slot to apply it';
+  }catch(e){$('sceneStatus').textContent='Import rejected — existing scenes unchanged'}
+};
+async function request(path,q,signal){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q),signal});if(!r.ok)throw Error('Session rejected: '+r.status);return r.json()}
+function clearAudio(){for(const s of sources){try{s.stop()}catch{}}sources.clear();visual=[];next=ctx?ctx.currentTime:0;for(let i=0;i<3;i++)for(const b of $('lane'+i).children)b.classList.remove('current')}
+function disconnect(){cancelScore('Disconnected');gen++;playEpoch++;playing=0;clearTimeout(timer);if(inflight)inflight.abort();inflight=null;clearAudio();const old=token;token=null;if(old)request('/panic',{token:old}).catch(()=>{});$('status').textContent='Stopped / disconnected'}
+async function begin(){disconnect();const g=gen;try{if(!ctx)ctx=new AudioContext();await ctx.resume();if(g!==gen)return;const controller=new AbortController();inflight=controller;const r=await request('/session',{version:1,preset:$('preset').selectedIndex,seed:clamp('seed',1,2147483647)},controller.signal);if(g!==gen){request('/panic',{token:r.token}).catch(()=>{});return}inflight=null;token=r.token;seq=0;playing=1;next=ctx.currentTime+.03;pump(g)}catch(e){if(g===gen){disconnect();$('status').textContent=e.message}}}
+async function pump(g){if(g!==gen||!token)return;try{
+  if(ctx.state!=='running')throw Error('Audio context suspended');
+  while(visual.length&&visual[0].time<=ctx.currentTime){const v=visual.shift();v.lanes.forEach((l,i)=>{[...$('lane'+i).children].forEach((b,j)=>b.classList.toggle('current',j===l[0]&&v.playing))});$('status').textContent=(v.playing?'Playing':'Paused')+' | ticks / hits: '+v.lanes.map(l=>l[1]+'/'+l[2]).join(' · ')}
+  if(next-ctx.currentTime<.075&&sources.size<3&&visual.length<3){
+    const active=playing,epoch=playEpoch,controller=new AbortController(),performance=score;inflight=controller;
+    if(performance&&!performance.armed){
+      const r=await request('/score/start',{token,seq:++seq,slots:performance.slots,seconds:performance.seconds},controller.signal);
+      if(g!==gen)return;inflight=null;
+      if(r.seq!==seq||r.scene.total_remaining!==performance.total)throw Error('Score start mismatch');
+      if(score===performance)performance.armed=true;
+    }else{
+    const r=performance
+      ?await request('/score/block',{token,seq:++seq},controller.signal)
+      :await request('/block',{token,seq:++seq,...sceneControls(),playing:active},controller.signal);
+    if(g!==gen)return;inflight=null;
+    if(r.seq!==seq)throw Error('Sequence mismatch');
+    if(epoch===playEpoch&&active===playing){const raw=atob(r.pcm);if(raw.length!==2400)throw Error('PCM size');const b=ctx.createBuffer(1,1200,24000),a=b.getChannelData(0);for(let i=0;i<1200;i++){let v=raw.charCodeAt(2*i)|(raw.charCodeAt(2*i+1)<<8);a[i]=(v>=32768?v-65536:v)/32768}
+      const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);const at=Math.max(next,ctx.currentTime+.008);s.onended=()=>sources.delete(s);sources.add(s);s.start(at);next=at+.05;visual.push({time:next,lanes:r.lanes,playing:r.playing});
+      if(performance&&score===performance){
+        const frame=r.frame, count=performance.total-r.scene.total_remaining;
+        if(!frame||!Number.isInteger(frame.slot)||frame.slot<0||frame.slot>3||
+            !performance.slots[frame.slot]||count!==performance.count+1||count>performance.total)
+          throw Error('Native score response mismatch');
+        if(frame.slot!==performance.lastSlot){applyScene(frame.controls);performance.lastSlot=frame.slot}
+        performance.count=count;
+        const cue=performance.slots.slice(0,frame.slot+1).filter(s=>s!==null).length;
+        $('scoreStatus').textContent='Score cue '+cue+' / '+performance.cueCount+' (scene '+(frame.slot+1)+') — '+count+' / '+performance.total+' accepted blocks';
+        if(r.scene.total_remaining===0){score=null;playing=0;$('scoreStatus').textContent='Score complete — paused; resume manually'}
+      }
+    }
+    }
+  }
+  timer=setTimeout(()=>pump(g),15)
+}catch(e){if(g===gen){disconnect();$('status').textContent=e.message}}}
+$('start').onclick=()=>{if(token){if(!playing){playEpoch++;playing=1;clearAudio()}}else begin()};
+$('pause').onclick=()=>{cancelScore('Paused');if(!token){disconnect();return}playEpoch++;playing=0;clearAudio();$('status').textContent='Paused'};
+$('panic').onclick=disconnect;
+$('reset').onclick=()=>{disconnect();load();begin()};
+$('preset').onchange=()=>{disconnect();load()};
+window.addEventListener('pagehide',disconnect);
+</script></html>

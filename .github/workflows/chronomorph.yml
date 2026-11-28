@@ -1,0 +1,142 @@
+name: Chronomorph native audition
+on:
+  push:
+    paths:
+      - 'instruments/chronomorph/**'
+      - '.github/workflows/chronomorph.yml'
+  pull_request:
+    paths:
+      - 'instruments/chronomorph/**'
+      - '.github/workflows/chronomorph.yml'
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: instruments/chronomorph
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source revision
+        shell: bash
+        env:
+          EXPECTED_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test -n "$EXPECTED_REVISION" && test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and exercise actual core
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -pedantic chrono.c audition.c -o chronomorph.exe
+          ./chronomorph.exe --test
+          python smoke.py ./chronomorph.exe
+      - name: Native scene bank and score cursor
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -pedantic chrono.c test_scene_memory.c -o scene-test.exe
+          ./scene-test.exe
+          if [ "$RUNNER_OS" = Linux ]; then
+            gcc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -fsanitize=undefined -fno-sanitize-recover=all chrono.c test_scene_memory.c -o scene-sanitized
+            ./scene-sanitized
+          fi
+      - name: Live native engine and HTTP controls
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            lib=chronomorph-live.dll
+            gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -Wl,--export-all-symbols chrono.c live_bridge.c -o "$lib"
+          else
+            lib=chronomorph-live.so
+            gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC chrono.c live_bridge.c -o "$lib"
+          fi
+          python live_test.py "$lib"
+          python test_scene_http.py "$lib"
+      - name: Tidal Interlock live score and matched pattern control
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then lib=chronomorph-live.dll; else lib=chronomorph-live.so; fi
+          python tidal_interlock.py "$lib" tidal-evidence
+          python -c "import json,pathlib; r=json.loads(pathlib.Path('tidal-evidence/receipt.json').read_text()); assert r['arms']['tidal-interlock']['wav_sha256']=='dfadb7599551b54ea0243b64948f462fd80c1e521d85446b64671b9e9dc9d787'; assert r['arms']['fixed-pattern-control']['wav_sha256']=='e34de50878f2bf80547725acadcfe35068ddc1a117d6bb52e6ee76b4e476f775'; assert r['arms']['tidal-interlock']['trace_sha256']=='d486c58e2430f7d48d4d60031c85855efe0989c256315ece33da043ed1d96f09'; assert r['arms']['fixed-pattern-control']['trace_sha256']=='3e7b8fe82d42982522f115b97486ea565d513a3f424e470aba8103b17f5fa457'"
+          python companion_replay.py tidal-evidence tidal-evidence/companion-replay.json
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('tidal-evidence/companion-replay.json').read_bytes()).hexdigest()=='7a19df7320bd860d770e30dfc710297625f1903866747cbe650b7e299b0a9407'"
+          cp tidal_interlock.py companion_replay.py tidal-evidence/
+          git rev-parse HEAD > tidal-evidence/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chronomorph-tidal-interlock-${{ runner.os }}
+          path: instruments/chronomorph/tidal-evidence/
+          if-no-files-found: error
+      - name: Lattice Variations actual-core score and matched pattern control
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then lib=chronomorph-live.dll; else lib=chronomorph-live.so; fi
+          python lattice_variations.py "$lib" lattice-evidence
+          python -c "import json,pathlib; r=json.loads(pathlib.Path('lattice-evidence/receipt.json').read_text()); a=r['arms']; assert a['lattice-variations']['wav_sha256']=='e2c5e05fbc69db587619926384aaf91667ae97b81d769f042a085d076c4b23ee'; assert a['fixed-pattern-control']['wav_sha256']=='5a64cdc1e882124f7e6da69669d4f6841b4a626627d0bd1135882d3434b2f42e'; assert a['lattice-variations']['trace_sha256']=='7fc36d71602bad954308c1b2049846e5712b6345d74d8a9761a1fcf31e56865f'; assert a['fixed-pattern-control']['trace_sha256']=='7659c7a226fa354a39d14dc7fe570515f28def484a1c524e62d6b1403db98dbc'"
+          cp lattice_variations.py lattice-evidence/
+          git rev-parse HEAD > lattice-evidence/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chronomorph-lattice-variations-${{ runner.os }}
+          path: instruments/chronomorph/lattice-evidence/
+          if-no-files-found: error
+      - name: Performer-authored saved score and matched pattern control
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then lib=chronomorph-live.dll; else lib=chronomorph-live.so; fi
+          python scene_score.py "$lib" 'saved score evidence' --self-test
+          python -c "import json,pathlib; r=json.loads(pathlib.Path('saved score evidence/receipt.json').read_text()); a=r['arms']; assert r['slots']==[1,3] and r['frames']==120000 and r['changed_samples']==[0,45561]; assert a['saved-score']['wav_sha256']=='d29bad4a6b88ac4100416f38bd78c1f2b9e340f15d39399cf22a91cef3ab3ff8'; assert a['fixed-pattern-control']['wav_sha256']=='aa1e06456abd55149fdf4d412c165629803b84542bc57bedddd8b003acbfad4a'; assert a['saved-score']['trace_sha256']=='f0464e7daf0619eb0ed36095515bb6bb618c3c9a356e4d78a6cec66c4a0877ef'; assert a['fixed-pattern-control']['trace_sha256']=='c03227e781c5304e320513dd44aebfbb5f0776e019d7a3f39c7e82699f9d8961'"
+          cp scene_score.py 'saved score evidence/'
+          git rev-parse HEAD > 'saved score evidence/source-revision.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chronomorph-saved-score-${{ runner.os }}
+          path: instruments/chronomorph/saved score evidence/
+          if-no-files-found: error
+      - name: Linux UBSan
+        if: runner.os == 'Linux'
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all chrono.c audition.c -o sanitized
+          ./sanitized --test
+      - name: Render compositions and verify exact reference WAVs
+        run: |
+          mkdir -p audition
+          ./chronomorph.exe --render audition/glass-lattice.wav 0 17 112 24 12 12 7 73 5 21 11 1321
+          ./chronomorph.exe --render audition/broken-meridian.wav 1 17 142 -32 12 12 5 21 9 297 7 85
+          ./chronomorph.exe --render audition/slow-eclipse.wav 2 17 84 48 12 12 9 293 7 73 13 4693
+          python -c "import hashlib,pathlib; expected={'glass-lattice':'d4d889efef0831c5ade6d614c40f66eb3476aaaed777cc465f643cf7f46f246a','broken-meridian':'80ab28577e2f2572708c4dcb2f19b89b0cf9a1585a1c0849d2d9891670d35058','slow-eclipse':'3a0b4ae74b2af0ac426b9ee9fd6ec97c715809b5cbe3d90b25c773785d31c05e'}; actual={p.stem:hashlib.sha256(p.read_bytes()).hexdigest() for p in pathlib.Path('audition').glob('*.wav')}; print(actual); assert actual==expected"
+          cp chrono.c chrono.h audition.c server.py smoke.py index.html profile.json README.md chronomorph.exe audition/
+          cp live.py live.html live_bridge.c live_test.py browser_test.py chronomorph-live.* audition/
+          cp scene_memory.h test_scene_memory.c test_scene_http.py audition/
+          git rev-parse HEAD > audition/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chronomorph-native-${{ runner.os }}
+          path: instruments/chronomorph/audition/
+          if-no-files-found: error
+  browser:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: instruments/chronomorph
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source revision
+        shell: bash
+        env:
+          EXPECTED_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test -n "$EXPECTED_REVISION" && test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned browser test driver
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Actual browser audio scheduling and controls
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC chrono.c live_bridge.c -o chronomorph-live.so
+          python browser_test.py chronomorph-live.so
