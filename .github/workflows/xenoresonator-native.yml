@@ -69,6 +69,17 @@ jobs:
           name: xenoresonator-patch-gallery-${{ matrix.os }}
           path: instruments/xenoresonator/patch gallery/
           if-no-files-found: error
+      - name: Native user material recall with matched macro-only ablation
+        run: |
+          python user_material_replay.py ./live.dll 'user material replay'
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('user material replay/receipt.json').read_bytes()).hexdigest() == 'c974de400e78af12aeef9dd511f890e3fb5cc28bdebcd4ae1d2a6bda126dbb1d'"
+          cp user_material_replay.py 'user material replay/'
+          git rev-parse HEAD > 'user material replay/SOURCE-REVISION.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-user-material-replay-${{ matrix.os }}
+          path: instruments/xenoresonator/user material replay/
+          if-no-files-found: error
       - name: Create audition package and PCM receipts
         run: |
           mkdir -p 'audition package'
