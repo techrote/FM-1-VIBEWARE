@@ -1,0 +1,50 @@
+name: QA Windows native selector
+on:
+  pull_request:
+    paths: ['catalogue/selector.py','catalogue/test_selector.py','catalogue/native-packages.json','.github/workflows/qa-native-selector.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-selector:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Actual original Windows archives, verified extraction and local launch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p 'downloaded archives'
+          python catalogue/selector.py
+          python catalogue/test_selector.py
+          python -c 'import json; p=json.load(open("catalogue/native-packages.json"))["packages"]; assert len(p)==4 and len({x["id"] for x in p})==4 and all(x["qa_run"] for x in p); print("\n".join(str(x["id"])+" "+str(x["artifact"]) for x in p))' > selector-pins.txt
+          while read -r instrument id; do
+            # Native Windows Python writes CRLF; Bash read retains the CR.
+            id=${id%$'\r'}
+            [[ "$id" =~ ^[0-9]+$ ]]
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "downloaded archives/$instrument.zip"
+            python catalogue/selector.py "$instrument" "downloaded archives/$instrument.zip" --verify
+            python catalogue/selector.py "$instrument" "downloaded archives/$instrument.zip" --probe
+          done < selector-pins.txt
+      - name: Stage source-only selector
+        run: |
+          mkdir -p selector
+          cp catalogue/selector.py catalogue/native-packages.json catalogue/SELECTOR.md selector/
+          git rev-parse HEAD > selector/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibeware-windows-native-selector-source
+          path: selector/
+          if-no-files-found: error

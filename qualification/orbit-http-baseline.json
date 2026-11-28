@@ -1,0 +1,13 @@
+{
+  "gate": "host HTTP native-core only",
+  "pcm_sha256": [
+    "ded6a87254260b03dfa9520c3c63f93683020c86a44139ae3e36c8e9014190a9",
+    "0c7f59df7ef63c022e9ad640ea59470b31b3eee600652c40a25cafe31943eb3d",
+    "149f1eedd7e00bced2a0043feb2fe014e6c214fc2fbeb1ce596eab6d3627088a",
+    "0b664a14d749d80be5e63f80fcf97452ef01ee26f3e1276f4ae1bb0903d2808a",
+    "4da4b42c0e621c27035e145ff966333be04a6d26d17288c60d8daa3650dbb086"
+  ],
+  "control_cases": 5,
+  "malformed_rejections": 10,
+  "lease_panic_release_reconnect": "PASS"
+}

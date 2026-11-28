@@ -1,0 +1,284 @@
+name: QA successor native archives and replay alignment
+on:
+  pull_request:
+    paths: ['.github/workflows/qa-successor-native.yml','qualification/successor_scores.py','qualification/verify_replay.py','qualification/verify_patch_gallery.py','qualification/verify_lattice.py','qualification/verify_live_replays.py','qualification/verify_material_replay.py','qualification/verify_memory_replay.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  successor:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - instrument: ecophon
+            ref: 88c6a656c7b3db65b3f8baab57b9f44300bd5ead
+            os: ubuntu-24.04
+            artifact: 15248318384
+            digest: 272dddd1b5d965656dae6e4b67360045d4086eea08ad064d8639767339aa9f9e
+            score: 0
+            score_digest: none
+            gallery: 0
+            gallery_digest: none
+            lattice: 0
+            lattice_digest: none
+            sketch: 0
+            sketch_digest: none
+            memory: 15248398158
+            memory_digest: 5b1c585fa9d5e9bddc8bee8f29ca70bbe99003d48017fa3b5822f7ffc915b44f
+          - instrument: ecophon
+            ref: 88c6a656c7b3db65b3f8baab57b9f44300bd5ead
+            os: windows-latest
+            artifact: 15248139294
+            digest: ed3d6d98d316012ebfcabe008098bc676978bf7e262552e1337cfeada6cf46e6
+            score: 0
+            score_digest: none
+            gallery: 0
+            gallery_digest: none
+            lattice: 0
+            lattice_digest: none
+            sketch: 0
+            sketch_digest: none
+            memory: 15248508025
+            memory_digest: 2230a8b6268174cf54b976fed2d6ebaf79463f829f9f2dbdf5f78c6a584d8edb
+          - instrument: grimoire
+            ref: 55eb1bc8f4c99268dc4102fd03f9685bde932fd9
+            os: ubuntu-24.04
+            artifact: 15249485057
+            digest: 6489362ce7c9be2b28f9b2df55f5d01f34a95baa0d328da1f84ba7e542ea043b
+            score: 15249390505
+            score_digest: 31c22d2ec44b41b1e2f2970f3e68321fca6616c746115ab71dd09078e95ec187
+            gallery: 0
+            gallery_digest: none
+            lattice: 0
+            lattice_digest: none
+            sketch: 15248479592
+            sketch_digest: 21701476ee88f9c8114648c366496adde4635f488d272f4235732f4e55fc8699
+          - instrument: grimoire
+            ref: 55eb1bc8f4c99268dc4102fd03f9685bde932fd9
+            os: windows-latest
+            artifact: 15248509378
+            digest: 1fc8b0c3f87290e049cd73b7e329c829409005b08565a14378f3601684f68495
+            score: 15249231229
+            score_digest: 585b841a2585d581a1bc55095b0188311b51af58cefc9fa48a0f9aaf057c7434
+            gallery: 0
+            gallery_digest: none
+            lattice: 0
+            lattice_digest: none
+            sketch: 15248294810
+            sketch_digest: 9ccbc0e4ef46c63ad1efe11d098c1271dcb56cb79007ba5b6127af12e97e0783
+          - instrument: xenoresonator
+            ref: 18dfda134c401dc9d3fa178c8193ae0983648bb8
+            os: ubuntu-24.04
+            artifact: 15247912493
+            digest: 50b591adfbea97e8729ea8d81b80bdc663f04e5238270a1d23502c41b6982d87
+            score: 15247957133
+            score_digest: e20e0b5c56ded4fe9a973eba99f34edb7cccadfd1274b0e8e2e9b90a06b8e6dc
+            material: 15247094784
+            material_digest: 349cbed19ee1cea26e2f394e8956d48530cc225c4f2fb0be7e25242b023c96a2
+            gallery: 15247977162
+            gallery_digest: dadfc06f1499ce9611d1ad69dffbe76b0f28c5937adc79b7d64bcc5b5fbd6e31
+            lattice: 0
+            lattice_digest: none
+            sketch: 0
+            sketch_digest: none
+          - instrument: xenoresonator
+            ref: 18dfda134c401dc9d3fa178c8193ae0983648bb8
+            os: windows-latest
+            artifact: 15246969978
+            digest: 866f79b5bb37f306d4d4d03345c1cc2abf3a4b83436993c25a90bbf13a75ec84
+            score: 15247144622
+            score_digest: 620971b59e771b19b9559d945edac835b97650d0114b5a3651d930f3a0d0bbdf
+            material: 15247618781
+            material_digest: a001754723d27262664f09c549c9ec7a0b59d5ce8c090e1fbfddf56a516ae7c1
+            gallery: 15248036063
+            gallery_digest: a889686684fa32ab653cee4e60d807c776f9f89c9ca0a5ddfa52b584801a013a
+            lattice: 0
+            lattice_digest: none
+            sketch: 0
+            sketch_digest: none
+          - instrument: chronomorph
+            ref: 85ac632f967154109632f8db64a30e4b79f77fb8
+            os: ubuntu-24.04
+            artifact: 15247588369
+            digest: 03eda05ba5b9ea385812ab7476533cb0dea2b1788d48a39eb0a9c00d09e7b383
+            score: 15247069012
+            score_digest: f0b9563945f52771dbdc1f4325d280fb9271e1d7f259069068127635c9353d42
+            gallery: 0
+            gallery_digest: none
+            lattice: 15247253887
+            lattice_digest: 8fe3180f6418069b544df905d4aaaae37e6dfec4aa5d87aea8267d2d9abd1a70
+            sketch: 0
+            sketch_digest: none
+          - instrument: chronomorph
+            ref: 85ac632f967154109632f8db64a30e4b79f77fb8
+            os: windows-latest
+            artifact: 15248131513
+            digest: 6a190d35d46565500cf99b066b93bd1a3540919f1b6d3cbab9f6401f4c86e545
+            score: 15248086792
+            score_digest: 741f2129ca7bcffc42693c96029250888c743a3058b9b21b7f9b6bfdea9aff8a
+            gallery: 0
+            gallery_digest: none
+            lattice: 15248365726
+            lattice_digest: 2394159e4d15002537523c9501c04099f9d69e443e618cf21de5872fadb675d5
+            sketch: 0
+            sketch_digest: none
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          path: frozen
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exact original archive and independent native rebuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ matrix.artifact }}
+          DIGEST: ${{ matrix.digest }}
+          PIN: ${{ matrix.ref }}
+          INSTRUMENT: ${{ matrix.instrument }}
+          SCORE: ${{ matrix.score }}
+          SCORE_DIGEST: ${{ matrix.score_digest }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen rev-parse HEAD)" = "$PIN"
+          mkdir -p receipts
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > native.zip
+          if [ "$SCORE" != 0 ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SCORE/zip" > score.zip
+          fi
+          if [ "$INSTRUMENT" = ecophon ]; then
+            python qualification/ecophon_archive.py frozen native.zip "$DIGEST" --successor --live-arc | tee receipts/native.log
+          elif [ "$INSTRUMENT" = grimoire ]; then
+            python qualification/grimoire_archive.py frozen native.zip "$DIGEST" | tee receipts/native.log
+          else
+            python qualification/native_archive.py "$INSTRUMENT" frozen native.zip "$DIGEST" | tee receipts/native.log
+          fi
+          tail -n 1 receipts/native.log > receipts/native.json
+          extra=()
+          if [ "$INSTRUMENT" = ecophon ]; then extra+=(--live-arc); fi
+          python qualification/successor_scores.py "$INSTRUMENT" frozen native.zip "$DIGEST" score.zip "$SCORE_DIGEST" "${extra[@]}" | tee receipts/score.log
+          tail -n 1 receipts/score.log > receipts/score.json
+          python -c "import json; [json.load(open('receipts/'+n+'.json')) for n in ('native','score')]"
+          git -C frozen rev-parse HEAD > receipts/source.txt
+          gcc --version > receipts/compiler.txt
+      - name: Independent factory-patch gallery replay and PCM inspection
+        if: matrix.instrument == 'xenoresonator'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GALLERY: ${{ matrix.gallery }}
+          DIGEST: ${{ matrix.gallery_digest }}
+          PIN: ${{ matrix.ref }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$GALLERY/zip" > gallery.zip
+          mkdir -p 'gallery original' 'gallery fresh'
+          python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract; extract(Path('gallery.zip'),Path('gallery original'),sys.argv[1])" "$DIGEST"
+          test "$(tr -d '\r\n' < 'gallery original/SOURCE-REVISION.txt')" = "$PIN"
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          gcc "${flags[@]}" frozen/instruments/xenoresonator/xeno.c frozen/instruments/xenoresonator/live_bridge.c -o 'gallery fresh/core.dll'
+          python frozen/instruments/xenoresonator/patch_gallery.py 'gallery fresh/core.dll' 'gallery fresh'
+          python qualification/verify_patch_gallery.py 'gallery original' > receipts/gallery.json
+          python qualification/verify_patch_gallery.py 'gallery fresh'
+          python -c "from pathlib import Path; a=Path('gallery original'); b=Path('gallery fresh'); files=sorted(a.glob('*.wav'))+[a/'receipt.json']; assert len(files)==9; assert all(p.read_bytes()==(b/p.name).read_bytes() for p in files)"
+      - name: Independently rebuild and validate Lattice Variations
+        if: matrix.instrument == 'chronomorph'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ matrix.lattice }}
+          DIGEST: ${{ matrix.lattice_digest }}
+          PIN: ${{ matrix.ref }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > lattice.zip
+          mkdir -p 'lattice original' 'lattice fresh'
+          python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract; extract(Path('lattice.zip'),Path('lattice original'),sys.argv[1])" "$DIGEST"
+          test "$(tr -d '\r\n' < 'lattice original/source-revision.txt')" = "$PIN"
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          gcc "${flags[@]}" frozen/instruments/chronomorph/chrono.c frozen/instruments/chronomorph/live_bridge.c -o 'lattice fresh/core.dll'
+          python frozen/instruments/chronomorph/lattice_variations.py 'lattice fresh/core.dll' 'lattice fresh'
+          python qualification/verify_lattice.py 'lattice original' 'lattice fresh' > receipts/lattice.json
+      - name: Independently rebuild live Arc and sketch replay
+        if: matrix.instrument == 'ecophon' || matrix.instrument == 'grimoire'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTRUMENT: ${{ matrix.instrument }}
+          SKETCH: ${{ matrix.sketch }}
+          SKETCH_DIGEST: ${{ matrix.sketch_digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p 'fresh live replay'
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          if [ "$INSTRUMENT" = ecophon ]; then
+            gcc "${flags[@]}" frozen/instruments/ecophon/ecophon.c frozen/instruments/ecophon/fixture.c -o 'fresh core.dll'
+            python frozen/instruments/ecophon/live_arc_fixture.py 'fresh core.dll' 'fresh live replay'
+            python qualification/verify_live_replays.py ecophon native.zip 'fresh live replay' > receipts/live-replay.json
+          else
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SKETCH/zip" > sketch.zip
+            python -c "import hashlib,sys; from pathlib import Path; assert hashlib.sha256(Path('sketch.zip').read_bytes()).hexdigest()==sys.argv[1]" "$SKETCH_DIGEST"
+            node --version
+            gcc "${flags[@]}" frozen/instruments/grimoire/orbit.c frozen/companion/grimoire/session.c -o 'fresh core.dll'
+            python frozen/companion/grimoire/sketch_replay.py 'fresh core.dll' 'fresh live replay'
+            python qualification/verify_live_replays.py grimoire sketch.zip 'fresh live replay' > receipts/live-replay.json
+          fi
+      - name: Independently rebuild and validate held user-material recall
+        if: matrix.instrument == 'xenoresonator'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ matrix.material }}
+          DIGEST: ${{ matrix.material_digest }}
+          PIN: ${{ matrix.ref }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > material.zip
+          mkdir -p 'material original' 'material fresh'
+          python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract; extract(Path('material.zip'),Path('material original'),sys.argv[1])" "$DIGEST"
+          test "$(tr -d '\r\n' < 'material original/SOURCE-REVISION.txt')" = "$PIN"
+          cmp 'material original/user_material_replay.py' frozen/instruments/xenoresonator/user_material_replay.py
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          gcc "${flags[@]}" frozen/instruments/xenoresonator/xeno.c frozen/instruments/xenoresonator/live_bridge.c -o 'material fresh/core.dll'
+          python frozen/instruments/xenoresonator/user_material_replay.py 'material fresh/core.dll' 'material fresh'
+          python qualification/verify_material_replay.py 'material original' 'material fresh' > receipts/material.json
+      - name: Independently rebuild and verify Ecophon memory recall
+        if: matrix.instrument == 'ecophon'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ matrix.memory }}
+          DIGEST: ${{ matrix.memory_digest }}
+          PIN: ${{ matrix.ref }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > memory.zip
+          mkdir -p 'memory original' 'memory fresh'
+          python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract; extract(Path('memory.zip'),Path('memory original'),sys.argv[1])" "$DIGEST"
+          test "$(tr -d '\r\n' < 'memory original/source-revision.txt')" = "$PIN"
+          for f in ecophon.c ecophon.h fixture.c memory_fixture.py; do
+            cmp "memory original/$f" "frozen/instruments/ecophon/$f"
+          done
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          gcc "${flags[@]}" frozen/instruments/ecophon/ecophon.c frozen/instruments/ecophon/fixture.c -o 'memory fresh/core.dll'
+          python frozen/instruments/ecophon/memory_fixture.py 'memory fresh/core.dll' 'memory fresh'
+          python qualification/verify_memory_replay.py 'memory original' 'memory fresh' > receipts/memory.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-successor-${{ matrix.instrument }}-${{ matrix.os }}
+          path: receipts/
+          if-no-files-found: error

@@ -1,0 +1,102 @@
+name: QA original native audition archives
+on:
+  pull_request:
+    paths: ['qualification/native_archive.py','qualification/grimoire_archive.py','.github/workflows/qa-native-archives.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  archive:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - instrument: chronomorph
+            ref: be57d9f77e9325271adbd4558dfd554c6cd81e19
+            os: ubuntu-24.04
+            artifact: 15223154849
+            digest: 438d3b10b4a2fd1d57e7817db26f46ebb1938939c0d3992221568b1bccfa10fb
+          - instrument: chronomorph
+            ref: be57d9f77e9325271adbd4558dfd554c6cd81e19
+            os: windows-latest
+            artifact: 15224186300
+            digest: 56e932ba9c9d87233a2ab4a9b0667c14f2894a74cdd326209cb7f6bcabccaba9
+          - instrument: xenoresonator
+            ref: cc3aa472b267e601d11c811fe7f390970db5348b
+            os: ubuntu-24.04
+            artifact: 15222168428
+            digest: 6016ada4ac2ac77a4f35a3b09ebf330186cc8b14c8ee4e8f43419fa6c866a2d1
+          - instrument: xenoresonator
+            ref: cc3aa472b267e601d11c811fe7f390970db5348b
+            os: windows-latest
+            artifact: 15222813934
+            digest: 51bc83a5953d5679ac91e0ec4195db4098023482bd2a3bc58ae778fd27907024
+          - instrument: ecophon
+            ref: 88ef1da1d013457c416e2168ae64836a68fbc4d4
+            os: ubuntu-24.04
+            artifact: 15225021226
+            digest: eac159c84687cfb8e03baca2257992940e7407138325c3dff5dca7ff44317844
+          - instrument: ecophon
+            ref: 88ef1da1d013457c416e2168ae64836a68fbc4d4
+            os: windows-latest
+            artifact: 15224337693
+            digest: 8dc286554c5747cc0fa380c3bee4ae986e8ce100c3a77575425b22aebf94a1aa
+          - instrument: grimoire
+            ref: e999ac2d3c0556132f92ffd1036617ac87c0118f
+            os: ubuntu-24.04
+            artifact: 15224328963
+            digest: e46765605f9f109f22832c6e134ae20fb6ddd8a1159fbcd5aa28c7d1ebe2ab04
+          - instrument: grimoire
+            ref: e999ac2d3c0556132f92ffd1036617ac87c0118f
+            os: windows-latest
+            artifact: 15224732379
+            digest: a555e3f36dd87f61dd138e040f25c97373f5c5854a72be21ac67839211feb61e
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          path: frozen
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Independent archive extraction, rebuild and actual audio witness
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ matrix.artifact }}
+          DIGEST: ${{ matrix.digest }}
+          PIN: ${{ matrix.ref }}
+          INSTRUMENT: ${{ matrix.instrument }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen rev-parse HEAD)" = "$PIN"
+          mkdir -p receipts
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > original.zip
+          python -m py_compile qualification/native_archive.py
+          if [ "$INSTRUMENT" = ecophon ]; then
+            python qualification/ecophon_archive.py frozen original.zip "$DIGEST" | tee receipts/test.log
+          elif [ "$INSTRUMENT" = grimoire ]; then
+            python qualification/grimoire_archive.py frozen original.zip "$DIGEST" | tee receipts/test.log
+          else
+            python qualification/native_archive.py "$INSTRUMENT" frozen original.zip "$DIGEST" | tee receipts/test.log
+          fi
+          tail -n 1 receipts/test.log > receipts/qualification.json
+          python -c "import json; json.load(open('receipts/qualification.json'))"
+          printf '%s\n' "$PIN" > receipts/source.txt
+          gcc --version > receipts/compiler.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-archive-${{ matrix.instrument }}-${{ matrix.os }}
+          path: receipts/
+          if-no-files-found: warn

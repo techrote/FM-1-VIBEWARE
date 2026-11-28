@@ -1,0 +1,47 @@
+name: QA independent CYDaux negative lifecycle
+on:
+  pull_request:
+    paths: ['.github/workflows/qa-bridge-negative.yml','qualification/verify_bridge.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  bridge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CYDAUX_REF: b33830ef50c52663d83a69bb1e5f25b109bc9053
+      TARGET_REF: 8c709af4e740a3f5700a8b8ca68492467f613016
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 8c709af4e740a3f5700a8b8ca68492467f613016
+          path: frozen-target
+          persist-credentials: false
+      - name: Fetch exact author evidence and rebuild actual virtual route
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-target rev-parse HEAD)" = "$TARGET_REF"
+          mkdir -p receipts original
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15255390508/zip" > original.zip
+          echo '7165ba5cdcd5981cc780f4f2212b668e6d02abc0d7e168997a2f6b87cbfc130a  original.zip' | sha256sum -c -
+          bash frozen-target/platform/companion/ci.sh
+      - name: Independently compare actual bridge PCM witnesses and manifest
+        run: |
+          set -euo pipefail
+          python3 qualification/verify_bridge.py original.zip original frozen-target/companion-results | tee receipts/bridge-reproduction.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-independent-bridge-negative-evidence
+          path: |
+            receipts/
+            frozen-target/companion-results/
+          if-no-files-found: warn

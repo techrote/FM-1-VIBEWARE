@@ -1,0 +1,81 @@
+name: QA independent material morph reproduction
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qa-morph-reproduction.yml'
+      - 'qualification/verify_morph.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  morph:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: 15249064213
+            digest: 5907e0907d2a69431131c5878b0b27168ae1b02e3b4a8eb409342c5698172c6c
+          - os: windows-latest
+            artifact: 15249524128
+            digest: 179130a8d6b4373ced7a6f28694171e5cf59aea1a201101733e30aedb442e446
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIN: fa35aeb697757f8be43d7a517bbce0ebd3fc8ff2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PIN }}
+          path: frozen
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rebuild and independently validate original and fresh PCM
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ matrix.artifact }}
+          DIGEST: ${{ matrix.digest }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen rev-parse HEAD)" = "$PIN"
+          mkdir -p 'original morph' 'fresh morph' receipts
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > original.zip
+          python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract; extract(Path('original.zip'),Path('original morph'),sys.argv[1])" "$DIGEST"
+          test "$(tr -d '\r\n' < 'original morph/SOURCE-REVISION.txt')" = "$PIN"
+          c=frozen/instruments/xenoresonator
+          for f in xeno.c xeno.h live_bridge.c live.html material_morph_replay.py; do
+            cmp "original morph/$f" "$c/$f"
+          done
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          gcc "${flags[@]}" "$c/xeno.c" "$c/live_bridge.c" -o 'fresh morph/core.dll'
+          python "$c/material_morph_replay.py" 'fresh morph/core.dll' 'fresh morph'
+          python qualification/verify_morph.py 'original morph' > receipts/original.json
+          python qualification/verify_morph.py 'fresh morph' > receipts/fresh.json
+          cmp receipts/original.json receipts/fresh.json
+          for f in fixed.wav macros-only.wav full-morph.wav endpoint-step.wav receipt.json; do
+            cmp "original morph/$f" "fresh morph/$f"
+          done
+          printf '%s\n' "$PIN" > receipts/source.txt
+          printf '%s %s\n' "$ARTIFACT" "$DIGEST" > receipts/artifact.txt
+          gcc --version > receipts/compiler.txt
+          cat receipts/fresh.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-morph-${{ matrix.os }}
+          path: receipts/
+          if-no-files-found: error

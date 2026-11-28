@@ -1,0 +1,156 @@
+name: QA independent Xenoresonator virtual USB replay
+on:
+  pull_request:
+    paths: ['.github/workflows/qa-usb-replay.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CYDAUX_REF: 7a8ce4be817ccc85ae22f982df98baa701b8176a
+      TARGET_REF: 3449ead4dd13d91ba0a57262a48349f38d6c465c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 3449ead4dd13d91ba0a57262a48349f38d6c465c
+          path: frozen-target
+          persist-credentials: false
+      - name: Verify and safely extract original immutable author artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p receipts original
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15222349807/zip" > original.zip
+          echo 'e8a6428aac015371257bf416b7c3ffce03a69730a85d713a1e9cc18fd45f3ab3  original.zip' | sha256sum -c -
+          python3 - <<'PY'
+          import zipfile, stat
+          from pathlib import PurePosixPath
+          with zipfile.ZipFile("original.zip") as z:
+              seen = set()
+              total = 0
+              for i in z.infolist():
+                  p = PurePosixPath(i.filename)
+                  assert not p.is_absolute() and '..' not in p.parts and '\\' not in i.filename
+                  assert not stat.S_ISLNK(i.external_attr >> 16)
+                  assert str(p) not in seen
+                  seen.add(str(p))
+                  total += i.file_size
+                  assert total < 32 * 1024 * 1024
+                  assert i.is_dir() or p.suffix in ('.txt','.json','.log','.map','.wav','.bmp'), p
+              z.extractall("original")
+          PY
+      - name: Fresh target build and actual USB emulator execution
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-target rev-parse HEAD)" = "$TARGET_REF"
+          bash frozen-target/platform/companion/ci.sh
+      - name: Independent raw PCM, provenance and wire-reply analysis
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee receipts/independent-usb.json
+          from pathlib import Path
+          import array, hashlib, json, re, sys, wave
+          def sha(b):
+              return hashlib.sha256(b).hexdigest()
+          METRIC_NAMES = {'target_audio_blocks', 'target_audio_max_ticks', 'target_reply_deferrals', 'emulated_main_stack_used', 'emulated_supervisor_stack_used'}
+          def parse_metrics(raw):
+              metrics = {}
+              for line in raw.splitlines():
+                  match = re.fullmatch(r'([a-z_]+)=([0-9]+)', line)
+                  assert match, ('malformed metric', line)
+                  name, value = match.groups()
+                  assert name in METRIC_NAMES and name not in metrics, ('unexpected/duplicate metric', name)
+                  metrics[name] = int(value)
+              assert metrics.keys() == METRIC_NAMES, ('missing metrics', METRIC_NAMES - metrics.keys())
+              return metrics
+          def inspect(root):
+              pins = dict(x.split('=',1) for x in (root/'pins.txt').read_text().splitlines())
+              assert pins['integration'] == '3449ead4dd13d91ba0a57262a48349f38d6c465c'
+              assert pins['cydaux'] == '7a8ce4be817ccc85ae22f982df98baa701b8176a'
+              assert pins['xeno'] == 'fa27a317bb116f2afb62a710876f96314756f814'
+              assert pins['dinghy'] == '92f17b28f2d05f2f78fd1b160b58475d518902c8'
+              assert pins['emulator'] == '736aded65c8e2e9d652cf595fca248734483a877'
+              assert pins['toolchain_archive'] == 'cb896562418a2be93edb9bac26af4bc81a106a32974002a78e6b9fc203c93990'
+              manifest = json.loads((root/'sha256.json').read_text())
+              actual = {str(p.relative_to(root)):sha(p.read_bytes()) for p in root.rglob('*') if p.is_file() and p != root/'sha256.json'}
+              assert manifest == actual, 'artifact inventory/hash mismatch'
+              assert all(Path(p).suffix in ('.txt','.json','.log','.map','.wav','.bmp') for p in actual)
+              xip = json.loads((root/'xip.json').read_text())
+              assert xip['purpose'] == 'emulator-only'
+              assert xip['bytes'] == 57852
+              assert xip['xip_sha256'] == '488d614f669714efa5b6b37a8d780a59665381f6b56e23d4a2ffcd940a1d8186'
+              result = {'pins':pins,'xip':xip,'modes':{}}
+              for mode in ('instruction','strict'):
+                  folder = root/mode
+                  report = json.loads((folder/'qualification.json').read_text())
+                  assert report['status']=='PASS' and report['mode']==mode
+                  assert report['usb_audio_underruns']==0
+                  metrics = parse_metrics((folder/'target-metrics.txt').read_text())
+                  assert metrics['target_audio_blocks']>100
+                  assert 0<metrics['target_audio_max_ticks']*44100<256*24000000
+                  assert 0<metrics['emulated_main_stack_used']<24320-1024
+                  assert 0<metrics['emulated_supervisor_stack_used']<7936-1024
+                  audio = {}
+                  for kind in ('uncoupled','repeat','coupled','full-session'):
+                      path = folder/f'xeno-{kind}.wav'
+                      with wave.open(str(path),'rb') as w:
+                          assert (w.getnchannels(),w.getsampwidth(),w.getframerate(),w.getcomptype())==(2,2,44100,'NONE')
+                          count = w.getnframes()
+                          raw = w.readframes(count)
+                      assert len(raw)==count*4 and count>2048
+                      samples=array.array('h'); samples.frombytes(raw)
+                      if sys.byteorder!='little': samples.byteswap()
+                      onset=next(i for i,s in enumerate(samples) if s)&~1
+                      assert len(samples)>=onset+4096
+                      assert sum(s!=0 for s in samples)>128
+                      audio[kind]={'frames':count,'peak':max(abs(s) for s in samples),'wav_sha256':sha(path.read_bytes()),'prefix':sha(raw[onset*2:(onset+4096)*2])}
+                      if kind=='full-session':
+                          assert count==report['i2s_frames']
+                          assert not any(samples[-4410:]), 'final 50ms not silent after lease expiry'
+                  assert audio['uncoupled']['prefix']==audio['repeat']['prefix']=='d2a91ed064d8289dd3254235ee29c6d836991054ac1a7885179514d38ad96aa8'
+                  assert audio['coupled']['prefix']=='f160f70c6b36029b99b1600605a6cb1509d299ed3e1d518e19afcc09d22d6e78'
+                  rows=[]
+                  for line in (root/f'{mode}-usb.log').read_text().splitlines():
+                      m=re.fullmatch(r'usb_reply ms=(\d+) rtt_ms=(\d+) op=(\d+) seq=(\d+) bytes=\[(.*)\]',line)
+                      if not m: continue
+                      ms,rtt,op,seq=map(int,m.groups()[:4])
+                      b=bytes.fromhex(m[5].replace(',',''))
+                      assert 0<rtt<=350 and b[:6]==bytes([240,125,67,89,1,0]) and b[-1]==247
+                      assert len(b)==15+b[13] and b[6]==op and b[11]+128*b[12]==seq
+                      session=sum(b[7+i]<<(7*i) for i in range(4))
+                      rows.append((ms,rtt,op,seq,session,list(b[14:-1])))
+                  assert len(rows)==22
+                  def row(session,seq,op):
+                      hits=[r for r in rows if r[2:5]==(op,seq,session)]
+                      assert len(hits)==1,(session,seq,op)
+                      return hits[0][5]
+                  assert row(42,0,2)==row(43,0,2)==[2,1,0,31,0,2]
+                  assert row(42,3,4)[4]==row(42,7,4)[4]==0
+                  assert row(42,11,4)[4]==127
+                  assert row(42,4,4)[12]&1 and row(42,12,4)[12]&1
+                  assert row(41,14,9)==[3] and row(42,15,9)==[5] and row(42,19,9)==[3]
+                  assert not row(42,17,4)[12]&1 and not row(43,1,4)[12]&1
+                  result['modes'][mode]={'audio':audio,'metrics':metrics,'wire_replies':rows,'underruns':report['usb_audio_underruns']}
+              return result
+          original=inspect(Path('original'))
+          rebuilt=inspect(Path('frozen-target/companion-results'))
+          assert original==rebuilt, 'independent rebuild differs from original published evidence'
+          print(json.dumps({'status':'PASS','scope':'virtual USB endpoint only; not CYD hardware or physical FM-1','original_artifact':15222349807,'results':rebuilt},sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-independent-xeno-usb-evidence
+          path: |
+            receipts/
+            frozen-target/companion-results/
+          if-no-files-found: warn
