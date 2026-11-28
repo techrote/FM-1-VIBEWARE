@@ -55,6 +55,7 @@ jobs:
           gcc -std=c11 -O2 -Wall -Wextra -Werror -shared $flags ecophon.c fixture.c -o "$lib"
           python test_live.py "$lib"
           python test_memory_http.py "$lib"
+          python test_arc_http.py "$lib"
       - name: Render and verify exact PCM
         run: |
           mkdir -p audition
@@ -70,7 +71,7 @@ jobs:
           python live_arc_fixture.py "$lib" audition/live-arc
           python -c "import hashlib,pathlib; p=pathlib.Path('audition/live-arc/live-arc-replay.json'); assert hashlib.sha256(p.read_bytes()).hexdigest()=='3ea099d0a352e56398f9bd0583103f0971dfa6cbca145be4637a72204411c8f3'"
           cp ecophon* audition/
-          cp README.md fixture.c environment_memory.h test_environment_memory.c test_memory_consumer.c live.py live.html test_live.py test_memory_http.py test_browser.py profile.json performance.py companion_fixture.py feedback.py live_arc_fixture.py audition/
+          cp README.md fixture.c environment_memory.h test_environment_memory.c test_memory_consumer.c live.py live.html test_live.py test_memory_http.py test_arc_http.py test_browser.py profile.json performance.py companion_fixture.py feedback.py live_arc_fixture.py audition/
           if [ "$RUNNER_OS" = Windows ]; then cp ecof.dll audition/; else cp libecof.so audition/; fi
       - uses: actions/upload-artifact@v4
         with:
