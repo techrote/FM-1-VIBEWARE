@@ -3,10 +3,14 @@ set -euo pipefail
 export LC_ALL=C
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 HERE="$ROOT/platform/emulator"
+source "$HERE/ci_mode.sh"
+MODE=$(vw_ci_mode "$@")
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 RES="$ROOT/platform-results"
 mkdir "$RES"
+printf '%s\n' "$MODE" > "$RES/ci-stage.txt"
+bash "$HERE/test_ci_mode.sh" 2>&1 | tee "$RES/ci-mode-test.txt"
 DINGHY=92f17b28f2d05f2f78fd1b160b58475d518902c8
 MHAC=cc132a43b27c1d9f23bf50bca224567af49e208e
 EMU=736aded65c8e2e9d652cf595fca248734483a877
@@ -103,6 +107,10 @@ with wave.open(sys.argv[1], 'rb') as a, wave.open(sys.argv[2], 'rb') as b:
     print(json.dumps(dict(baseline=sys.argv[1], intervention=sys.argv[2], prefix_frames=44100, post_start_frame=92610, post_frames=39690, changed_stereo_frames=sum(post_a[i:i+4]!=post_b[i:i+4] for i in range(0,len(post_a),4)))))
 PY
 }
+if [[ "$MODE" == rate ]]; then
+  vw_ci_rate_only
+  exit 0
+fi
 run_case "$TMP/reference.xip.bin" scope-reference p25q80 3
 printf '%s  %s\n' 7bc82e8e554a31635f830358ac01539fad08796b7636af85521fbdfe5437104b "$RES/scope-reference.wav" | sha256sum -c -
 run_case "$TMP/grimoire.xip.bin" orbit-n3 p25q80 3
@@ -117,7 +125,9 @@ fi
 echo "actual reference control + Grimoire PCM repeat, alternate flash model, pitch contrast and HOME tail PASS" | tee "$RES/result.txt"
 # No executable or raw XIP uploads until combined distribution rights are resolved.
 # Isolated #16 experiment; existing uninstrumented target evidence remains unchanged.
-source "$HERE/rate_target_probe.sh"
+if [[ "$MODE" == all ]]; then
+  source "$HERE/rate_target_probe.sh"
+fi
 
 
 # Each downstream target runs in a strict subshell; a failure cannot suppress
