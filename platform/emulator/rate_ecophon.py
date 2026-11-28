@@ -9,7 +9,7 @@ from rate_lifecycle import analyze, read_pcm, require
 from rate_quality import digest, high_fraction, sizes
 
 
-def runtime_variant(source, mode):
+def runtime_variant(source, mode, instrument='Ecophon'):
     if mode not in ('hold', 'linear'):
         raise ValueError('unknown rate mode')
     if mode == 'hold':
@@ -20,7 +20,7 @@ def runtime_variant(source, mode):
         ('vw_rate_clear(', 'vw_linear_clear(', 2),
         ('vw_rate_step(', 'vw_linear_step(', 1),
     ):
-        require(source.count(old) == count, 'unexpected Ecophon rate seam: ' + old)
+        require(source.count(old) == count, f'unexpected {instrument} rate seam: ' + old)
         source = source.replace(old, new)
     return source
 
@@ -33,12 +33,12 @@ def app_variant(source):
     return result.replace(old, 'uint32_t active=(cmd&(1u<<18))!=0;')
 
 
-def report(root):
+def report(root, instrument='Ecophon'):
     receipt = analyze(root)
     for case in ('lifecycle-control', 'lifecycle-switch'):
         require(digest(root / f'baseline-{case}.wav') ==
                 receipt['modes']['hold']['sha256'][case],
-                'instrumentation changed uninstrumented Ecophon PCM: ' + case)
+                f'instrumentation changed uninstrumented {instrument} PCM: ' + case)
     for case in ('lifecycle-control', 'lifecycle-switch', 'lifecycle-repeat'):
         a, b = (receipt['modes'][m]['modeled_callbacks'][case] for m in ('hold', 'linear'))
         for key in ('blocks', 'active_blocks', 'block_frames', 'model_timer_hz', 'wrong_size_blocks'):
@@ -55,7 +55,7 @@ def report(root):
     require(a['frames'] == b['frames'], 'unmatched PCM duration')
     require(receipt['modes']['hold']['sha256']['lifecycle-control'] !=
             receipt['modes']['linear']['sha256']['lifecycle-control'], 'rate change aliased')
-    receipt.update(scope='Ecophon virtual lifecycle experiment only; no adoption or physical claim',
+    receipt.update(scope=f'{instrument} virtual lifecycle experiment only; no adoption or physical claim',
                    arms=arms, high_band_delta_db=10*math.log10(b['high_fraction']/a['high_fraction']),
                    analysis_frames=[44100,88200], cutoff_hz=12000,
                    section_delta={k:b['sections'][k]-v for k,v in a['sections'].items()})
