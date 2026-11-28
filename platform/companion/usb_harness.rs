@@ -133,6 +133,24 @@ fn main(){
         assert!(machine.soc.periph.audio[begin..].iter().filter(|v|**v!=0).count()>128,"fresh session did not restore actual audio");
         request(&mut machine,8,43,3,&[],4);let until=machine.soc.periph.ms()+150;run_to(&mut machine,until);
         let audio=&machine.soc.periph.audio;assert!(audio[audio.len()-4410..].iter().all(|v|*v==0));
+        // A connected but idle companion must not own a locally started
+        // gesture. Matching-token late release and lease expiry must leave it
+        // sounding; explicit panel HOME must still mute it.
+        panel_press(&mut machine,"PLAY");
+        let local=request(&mut machine,3,43,4,&[],4);assert_eq!(local[26],1);
+        let late_local=request(&mut machine,7,43,5,&[local[25],0],4);
+        assert_eq!(late_local[26],1,"remote same-token release cancelled panel gate");
+        let until=machine.soc.periph.ms()+1650;run_to(&mut machine,until);
+        let audio=&machine.soc.periph.audio;
+        assert!(audio[audio.len()-4410..].iter().filter(|v|**v!=0).count()>128,"idle remote lease cancelled panel PCM");
+        let expired=request(&mut machine,3,43,6,&[],9);assert_eq!(expired[14],3);
+        request(&mut machine,1,44,0,&[instrument],2);
+        let local=request(&mut machine,3,44,1,&[],4);assert_eq!(local[26],1);
+        panel_press(&mut machine,"HOME");
+        let until=machine.soc.periph.ms()+150;run_to(&mut machine,until);
+        let audio=&machine.soc.periph.audio;
+        assert!(audio[audio.len()-4410..].iter().all(|v|*v==0),"panel HOME after reconnect");
+        let local=request(&mut machine,3,44,2,&[],4);assert_eq!(local[26],0);
     }
     let out=Path::new(&args[2]);fs::create_dir_all(out).unwrap();
     fm1_soc::write_bmp(out.join("actual-fm1-lcd.bmp").to_str().unwrap(),&machine.soc.lcd.fb,machine.soc.lcd.inverted).unwrap();
@@ -157,7 +175,7 @@ fn main(){
     metrics.push_str(&format!("emulated_main_stack_used={main_stack}\nemulated_supervisor_stack_used={supervisor_stack}\n"));
     fs::write(out.join("target-metrics.txt"),&metrics).unwrap();
     let contrast=if grimoire{"XY contrast"}else{"coupling contrast"};
-    let extra=if grimoire{r#","profile mismatch","late release","lease audio tail","fresh session audio recovery","standalone panel PLAY/HOME""#}else{""};
+    let extra=if grimoire{r#","profile mismatch","late release","lease audio tail","fresh session audio recovery","standalone panel PLAY/HOME","panel ownership across stale release and expiry""#}else{""};
     let report=format!("{{\"status\":\"PASS\",\"mode\":\"{}\",\"source\":\"actual pi32v2 firmware in fm1-emu USB model\",\"elapsed_host_seconds\":{},\"emulated_ms\":{},\"i2s_frames\":{},\"usb_audio_frames\":{},\"usb_audio_underruns\":{},\"emulated_main_stack_used\":{},\"emulated_supervisor_stack_used\":{},\"checks\":[\"USB discovery\",\"actual readback\",\"parameter and preset\",\"PCM repeat\",\"{}\",\"actual interval peaks\",\"stale session\",\"invalid range\",\"panic tail\",\"lease expiry\",\"new session recovery\",\"modeled callback deadline\",\"emulated stack reserve\"{}]}}\n",
         args[4],start.elapsed().as_secs_f64(),machine.soc.periph.ms(),machine.soc.periph.audio.len()/2,machine.soc.usb.audio.len()/2,machine.soc.usb.audio_underruns,main_stack,supervisor_stack,contrast,extra);
     fs::write(out.join("qualification.json"),&report).unwrap();println!("{metrics}{report}");

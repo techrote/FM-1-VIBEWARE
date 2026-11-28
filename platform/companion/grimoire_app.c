@@ -21,13 +21,18 @@ static CydEndpoint endpoint;
 static volatile uint32_t target_audio_blocks,target_audio_max_ticks,target_reply_deferrals;
 static uint8_t queued_reply[CYD_ENDPOINT_MAX_FRAME];
 static size_t queued_size;
+static uint8_t gate_owner,session_cleanup;
 static void publish(void) {
     unsigned next=(command_slot^1u)&1u;commands[next]=desired;
     RING_PUBLISH();command_slot=next;
 }
 static int apply(void *ctx,uint8_t op,const uint8_t *payload) {
-    (void)ctx;if(!cyd_orbit_apply(&desired,op,payload))return 0;
-    publish();return 1;
+    (void)ctx;
+    uint32_t prior=desired.version;
+    if(!cyd_orbit_apply_owned(&desired,&gate_owner,
+        session_cleanup?CYD_ORBIT_SESSION_LOSS:CYD_ORBIT_REMOTE,op,payload))return 0;
+    if(prior!=desired.version)publish();
+    return 1;
 }
 static int read_state(void *ctx,CydState *out) {
     (void)ctx;if(applied_version!=desired.version)return 0;
@@ -68,8 +73,10 @@ static int try_reply(const uint8_t *data,size_t length) {
 }
 static void companion_service(void) {
     const uint8_t *body;uint32_t length,session=endpoint.session;
-    if(!usb.config){cyd_endpoint_disconnect(&endpoint);queued_size=0;return;}
+    session_cleanup=1;
+    if(!usb.config){cyd_endpoint_disconnect(&endpoint);session_cleanup=0;queued_size=0;return;}
     cyd_endpoint_tick(&endpoint,fm1_ms);
+    session_cleanup=0;
     if(session&&!endpoint.session)queued_size=0;
     if(queued_size) {
         if(!try_reply(queued_reply,queued_size)){target_reply_deferrals++;return;}
@@ -88,7 +95,10 @@ static void companion_service(void) {
     if(queued_size&&try_reply(queued_reply,queued_size))queued_size=0;
     else if(queued_size)target_reply_deferrals++;
 }
-static void panel(uint8_t op,uint8_t a,uint8_t b) {const uint8_t p[2]={a,b};(void)apply(0,op,p);}
+static void panel(uint8_t op,uint8_t a,uint8_t b) {
+    const uint8_t p[2]={a,b};
+    if(cyd_orbit_apply_owned(&desired,&gate_owner,CYD_ORBIT_PANEL,op,p))publish();
+}
 static void app_main(void) {
     uint32_t prior=0,shown=~0u;
     (void)cyd_endpoint_init_profile(&endpoint,CYD_GRIMOIRE,2,0,apply,read_state);
