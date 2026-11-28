@@ -1,0 +1,109 @@
+name: QA independent Grimoire autonomy and Windows collection
+on:
+  pull_request:
+    paths: ['qualification/grimoire_receipt.py','.github/workflows/qa-autonomy-collection.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  grimoire-autonomy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VIBEWARE_USB_INSTRUMENT: grimoire
+      CYDAUX_REF: 5c3d7960ee76132cca95c92394010403f8bd638f
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: dceed6756bcc6784fdbd116f1a76e5b726ac936a
+          path: frozen-platform
+          persist-credentials: false
+      - name: Rebuild and execute frozen actual target on both clock models
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-platform rev-parse HEAD)" = dceed6756bcc6784fdbd116f1a76e5b726ac936a
+          bash frozen-platform/platform/companion/ci.sh
+      - name: Compare original and independently reproduced PCM and provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p receipts
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15257733962/zip" > original.zip
+          python3 qualification/grimoire_receipt.py original.zip frozen-platform/companion-results | tee receipts/grimoire.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-grimoire-autonomy-reproduction
+          path: |
+            receipts/
+            frozen-platform/companion-results/
+  windows-collection:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 4fd4473cd6a5bdb8a2dd94c268036f36f64c5906
+          path: frozen-integration
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: e6a3a79461c7f2672b266685c1ed3081f384c17c
+          path: frozen-qa
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify author source-only delivery and independently download original archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-integration rev-parse HEAD)" = 4fd4473cd6a5bdb8a2dd94c268036f36f64c5906
+          test "$(git -C frozen-qa rev-parse HEAD)" = e6a3a79461c7f2672b266685c1ed3081f384c17c
+          mkdir -p 'QA originals' 'QA selector' receipts
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15266032806/zip" > author.zip
+          echo '2f4fdf6e596d9cc9df8a1c084706009f53a8b075d484057d8b787807de081012  author.zip' | sha256sum -c -
+          for f in selector.py native-packages.json SELECTOR.md; do
+            git -C frozen-qa show HEAD:catalogue/$f > "QA selector/$f"
+          done
+          git -C frozen-integration show HEAD:integration/collection.py > collection.py
+          git -C frozen-integration show HEAD:integration/README.md > integration-readme.md
+          python - <<'PY'
+          import zipfile, pathlib
+          with zipfile.ZipFile('author.zip') as z:
+              expected={'collection.py':'collection.py','README.md':'integration-readme.md',
+                        **{'qa-selector/'+n:'QA selector/'+n for n in ('selector.py','native-packages.json','SELECTOR.md')}}
+              assert set(z.namelist())==set(expected)|{'collection.json','integration-revision.txt'}
+              for a,b in expected.items():
+                  # README may have CRLF from Windows checkout; source content must match.
+                  assert z.read(a).replace(b'\r\n',b'\n')==pathlib.Path(b).read_bytes().replace(b'\r\n',b'\n'),a
+              assert z.read('integration-revision.txt').strip()==b'4fd4473cd6a5bdb8a2dd94c268036f36f64c5906'
+              pathlib.Path('author-collection.json').write_bytes(z.read('collection.json'))
+          PY
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15257079145/zip" > 'QA originals/chronomorph.zip'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15256006594/zip" > 'QA originals/ecophon.zip'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15246065654/zip" > 'QA originals/xenoresonator.zip'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15245854227/zip" > 'QA originals/grimoire.zip'
+      - name: Actual independent extracted native probes and repeat receipt
+        run: |
+          set -euo pipefail
+          python collection.py prepare 'QA originals' --out 'QA owner audition'
+          python collection.py prepare 'QA originals' --out 'QA repeat audition'
+          cmp 'QA owner audition/collection.json' 'QA repeat audition/collection.json'
+          cmp author-collection.json 'QA owner audition/collection.json'
+          python collection.py probe 'QA owner audition' --selector 'QA selector' | tee receipts/probe.txt
+          cp 'QA owner audition/collection.json' receipts/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-independent-windows-collection
+          path: receipts/
