@@ -31,3 +31,23 @@ jobs:
           if-no-files-found: warn
           path: companion-results/
           retention-days: 30
+  target-grimoire:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VIBEWARE_USB_INSTRUMENT: grimoire
+      CYDAUX_REF: 5c3d7960ee76132cca95c92394010403f8bd638f
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Grimoire host, common codec, actual target and both USB clock models
+        run: bash platform/companion/ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cydaux-grimoire-usb-target-evidence
+          path: companion-results/
+          if-no-files-found: warn
+          retention-days: 30
