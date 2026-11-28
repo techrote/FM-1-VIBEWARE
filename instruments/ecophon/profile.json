@@ -91,5 +91,57 @@
     "verified physical MIDI",
     "device discovery",
     "FM-1 telemetry"
-  ]
+  ],
+  "performance_cues": {
+    "source": "local native audition controls, not device commands",
+    "frames_per_block": 2400,
+    "cue_blocks": 40,
+    "whole_arc_blocks": 240,
+    "targets": {
+      "mutualism": [
+        180,
+        200,
+        40
+      ],
+      "drought": [
+        0,
+        0,
+        255
+      ],
+      "recovery": [
+        255,
+        220,
+        0
+      ]
+    },
+    "arc_segments": [
+      {
+        "blocks": 40,
+        "target": "mutualism",
+        "mode": "ramp_from_current"
+      },
+      {
+        "blocks": 40,
+        "target": "drought",
+        "mode": "ramp"
+      },
+      {
+        "blocks": 40,
+        "target": "drought",
+        "mode": "hold"
+      },
+      {
+        "blocks": 40,
+        "target": "recovery",
+        "mode": "ramp"
+      },
+      {
+        "blocks": 80,
+        "target": "recovery",
+        "mode": "hold"
+      }
+    ],
+    "takeover": "manual controls, individual cue, freeze, feedback, reset or panic cancel the whole Arc",
+    "transport": false
+  }
 }
