@@ -68,6 +68,18 @@ jobs:
           name: ecophon-portable-${{ runner.os }}
           path: instruments/ecophon/audition/
 
+      - name: Render comparative environment memories
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then lib=ecof.dll; else lib=libecof.so; fi
+          python memory_fixture.py "$lib" memory-evidence
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('memory-evidence/environment-memory-replay.json').read_bytes()).hexdigest()=='8102e696b1f32805492faf1b31bfc63d20093f5489dd807aab109958933a4df1'"
+          cp memory_fixture.py ecophon.c ecophon.h fixture.c memory-evidence/
+          git rev-parse HEAD > memory-evidence/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ecophon-memory-replay-${{ runner.os }}
+          path: instruments/ecophon/memory-evidence/
+
   browser:
     runs-on: ubuntu-24.04
     defaults:
