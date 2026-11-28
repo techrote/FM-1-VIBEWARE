@@ -495,6 +495,39 @@ def main():
         endpoint.advance(40)
         witnesses["pressure_recovery_panic"] = endpoint.advance(80)
         assert witnesses["pressure_recovery_panic"]["nonzero"] == 0
+        # Exercise the actual shared touchscreen, not direct parameter/note
+        # commands. The third footer tab selects XY; both positions are inside
+        # the 218x136 pad. Each Down must deliver both parameters before Note.
+        state = route.action("tap 130 220")
+        assert state["page"] == 2 and state["xyEnabled"] and state["xyTouchGate"], state
+        performances = []
+        for x, y, expected_x, expected_y in ((100, 155, 53, 36), (180, 100, 102, 92)):
+            before = len(endpoint.sent)
+            state = route.action(f"down {x} {y}")
+            packets = endpoint.sent[before:]
+            assert [m[6] for m in packets] == [5, 5, 7], packets
+            assert packets[0][14:16] == (0, expected_x), packets
+            assert packets[1][14:16] == (1, expected_y), packets
+            assert packets[2][15] > 0 and state["noteHeld"], state
+            assert state["sourceLabel"] == "Emulated firmware", state
+            pcm = endpoint.advance(100)
+            assert pcm["nonzero"] > 128, pcm
+            state = route.action("tick 100")
+            assert state["xyX"] == expected_x and state["xyY"] == expected_y, state
+            assert state["telemetryAvailable"] and state["xyOriginX"] == "device" and state["xyOriginY"] == "device", state
+            before = len(endpoint.sent)
+            state = route.action(f"up {x} {y}")
+            release = endpoint.sent[before:]
+            assert not state["noteHeld"] and any(m[6] == 7 and m[15] == 0 for m in release), release
+            route.action("panic")
+            endpoint.advance(40)
+            silence = endpoint.advance(80)
+            assert silence["nonzero"] == 0, silence
+            performances.append({"touch": [x, y], "device_xy": [expected_x, expected_y],
+                                 "attack_operations": [m[6] for m in packets],
+                                 "pcm": pcm, "panic_tail": silence})
+        assert performances[0]["pcm"]["hash"] != performances[1]["pcm"]["hash"], performances
+        witnesses["touch_performance"] = performances
         witnesses["bridge_refusals"] = ["protocol", "token", "preauth MIDI",
                                         "unknown profile", "out-of-range MIDI"]
         report = {"status": "PASS", "route": "shared controller / authenticated localhost TCP / actual emulated USB / actual firmware CPU",
