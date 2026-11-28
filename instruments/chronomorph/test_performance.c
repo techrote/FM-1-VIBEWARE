@@ -55,9 +55,9 @@ int main(void) {
             assert(!cm_perf_transport(&a,&owner,99,CM_TRANSPORT_START));
             assert(!cm_perf_transport(&a,&owner,CM_ORIGIN_SESSION_LOST,CM_TRANSPORT_PANIC));
             assert(!cm_perf_transport(&a,&owner,CM_ORIGIN_PANEL,99));
-            assert(cm_perf_transport(&a,&owner,CM_ORIGIN_COMPANION,CM_TRANSPORT_START)==1);
-            assert(cm_perf_transport(&a,&owner,CM_ORIGIN_COMPANION,CM_TRANSPORT_STOP)==1);
-            assert(cm_perf_transport(&a,&owner,CM_ORIGIN_SESSION_LOST,CM_TRANSPORT_STOP)==1);
+            assert(cm_perf_transport(&a,&owner,CM_ORIGIN_COMPANION,CM_TRANSPORT_START)==5);
+            assert(cm_perf_transport(&a,&owner,CM_ORIGIN_COMPANION,CM_TRANSPORT_STOP)==5);
+            assert(cm_perf_transport(&a,&owner,CM_ORIGIN_SESSION_LOST,CM_TRANSPORT_STOP)==5);
             assert(owner==CM_OWNER_PANEL && !memcmp(&a,&prior,sizeof a));
             compare(&a,&b,owner,0);
         }
@@ -71,11 +71,14 @@ int main(void) {
         cm_start(&b);
         assert(cm_perf_transport(&a,&owner,CM_ORIGIN_PANEL,CM_TRANSPORT_START)==1);
         assert(owner==CM_OWNER_PANEL);
-        assert(cm_perf_transport(&a,&owner,CM_ORIGIN_SESSION_LOST,CM_TRANSPORT_STOP)==1);
+        assert(cm_perf_transport(&a,&owner,CM_ORIGIN_SESSION_LOST,CM_TRANSPORT_STOP)==5);
         compare(&a,&b,owner,0);
         assert(cm_perf_transport(&a,&owner,CM_ORIGIN_PANEL,CM_TRANSPORT_STOP)==3);
         cm_stop(&b); assert(owner==CM_OWNER_NONE); compare(&a,&b,owner,1);
+        assert(cm_perf_transport(&a,&owner,CM_ORIGIN_COMPANION,CM_TRANSPORT_START)==1);
+        cm_start(&b); assert(owner==CM_OWNER_COMPANION);
         assert(cm_perf_reset(&a,&owner,(p+1u)%3u,17)==3);
+        assert(owner==CM_OWNER_NONE);
         cm_reset(&b,17,(p+1u)%3u); compare(&a,&b,owner,1);
     }
     assert(blocks==1494u && sounding>0 && silent>=36u);
