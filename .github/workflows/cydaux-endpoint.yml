@@ -15,9 +15,9 @@ permissions:
 jobs:
   target-usb:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 50
     env:
-      CYDAUX_REF: ${{ inputs.cydaux_ref || '7a8ce4be817ccc85ae22f982df98baa701b8176a' }}
+      CYDAUX_REF: ${{ inputs.cydaux_ref || '5c3d7960ee76132cca95c92394010403f8bd638f' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,7 +33,7 @@ jobs:
           retention-days: 30
   target-grimoire:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     env:
       VIBEWARE_USB_INSTRUMENT: grimoire
       CYDAUX_REF: 5c3d7960ee76132cca95c92394010403f8bd638f
@@ -42,7 +42,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Grimoire host, common codec, actual target and both USB clock models
+      - name: Grimoire host, common codec, actual target, both USB clock models and TCP bridge
         run: bash platform/companion/ci.sh
       - uses: actions/upload-artifact@v4
         if: always()

@@ -89,6 +89,8 @@ test "$(wc -l < "$TMP/metrics.txt")" = 3
 python3 "$ROOT/platform/emulator/elf_xip.py" "$TMP/$INSTRUMENT.elf" "$TMP/$INSTRUMENT.xip.bin" | tee "$RES/xip.json"
 mkdir -p "$TMP/harness/src"
 cp "$HERE/usb_harness.rs" "$TMP/harness/src/main.rs"
+mkdir -p "$TMP/harness/src/bin"
+cp "$HERE/bridge_usb_stdio.rs" "$TMP/harness/src/bin/bridge_usb_stdio.rs"
 cat > "$TMP/harness/Cargo.toml" <<EOF
 [package]
 name = "cydaux-usb-qualification"
@@ -106,6 +108,9 @@ ARGS=()
 if [ "$INSTRUMENT" = grimoire ]; then ARGS=(grimoire); fi
 timeout 600 "$EXE" "$TMP/$INSTRUMENT.xip.bin" "$RES/instruction" "$TMP/metrics.txt" instruction "${ARGS[@]}" | tee "$RES/instruction-usb.log"
 timeout 900 "$EXE" "$TMP/$INSTRUMENT.xip.bin" "$RES/strict" "$TMP/metrics.txt" strict "${ARGS[@]}" | tee "$RES/strict-usb.log"
+cmake -S "$TMP/cydaux" -B "$TMP/cyd-build" -DCMAKE_BUILD_TYPE=Release
+cmake --build "$TMP/cyd-build" --target fm1-simulator -j 2
+timeout 600 python3 "$HERE/test_bridge_usb.py" "$TMP/cydaux" "$TMP/cyd-build/fm1-simulator" "$TMP/harness/target/release/bridge_usb_stdio" "$TMP/$INSTRUMENT.xip.bin" "$RES/bridge-usb.json" "$INSTRUMENT" | tee "$RES/bridge-usb.log"
 python3 - "$RES" <<'PY'
 import hashlib,json,sys
 from pathlib import Path
