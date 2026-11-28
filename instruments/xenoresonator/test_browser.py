@@ -332,9 +332,46 @@ try:
         page.locator('#strike').hover()
         gesture(page.mouse.down,1)
         wait("window.xenoProbe.peak>0.0001 && window.xenoProbe.bodyB>0")
+        # A native response may be received but never delivered to the pump.
+        # This deliberately withholds the real response even after fetch aborts.
+        # The request deadline must mute the held note and quarantine the late
+        # response, including across a new session.
+        old_token=page.evaluate('token')
+        page.evaluate('''() => {
+          const original=window.fetch;
+          window.fetch=async (...args)=>{
+            const response=await original(...args);
+            if(args[0]==='/block' && !window.releaseStalled){
+              await new Promise(resolve=>window.releaseStalled=resolve);
+            }
+            return response;
+          };
+        }''')
+        wait('typeof window.releaseStalled==="function"')
+        with page.expect_response(lambda r:r.url==url+'/panic' and
+                r.request.method=='POST' and r.request.post_data_json['token']==old_token) as panic:
+            wait("$('status').textContent.includes('Request deadline exceeded')")
+        assert (panic.value.status==200 and panic.value.json()['muted'] is True) or (
+            panic.value.status==409 and panic.value.json()['error']=='stale session')
+        silent()
+        assert page.evaluate('pointer===null && heldKey===null && memoryJobs.length===0')
+        page.mouse.up()
+        stale=page.request.post(url+'/block',data={'token':old_token,'seq':0})
+        assert stale.status==409 and stale.json()['error']=='stale session'
+        fresh(90)
+        assert page.evaluate('token')!=old_token
+        current_seq=page.evaluate('seq')
+        page.evaluate('window.releaseStalled()')
+        wait(f'active && seq>={current_seq+4}')
+        wait('window.xenoProbe.rms<0.000001')
+        assert page.evaluate('window.xenoProbe.peak<0.000001 && pointer===null && heldKey===null')
+        page.locator('#strike').hover()
+        gesture(page.mouse.down,1)
+        wait("window.xenoProbe.peak>0.0001 && window.xenoProbe.bodyB>0")
         gesture(page.mouse.up,2)
         page.click('#stop')
         silent()
+        print('PASS held-note deadline, native panic/stale session, late response quarantine and actual audio recovery')
         assert not errors,errors
         print('PASS Chromium actual audio, modal coupling, XY, input ownership, panic, fault and reconnect',coupled)
         browser.close()

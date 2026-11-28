@@ -19,7 +19,21 @@ const $=id=>document.getElementById(id), bars=[...$('modes').children];
 let ctx,token=null,epoch=0,seq=0,next=0,opening=false,active=false,events=[],visuals=[],sources=new Set(),gaps=0;
 let memoryJobs=[],controlRevision=0;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-async function post(path,q){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q)});if(!r.ok)throw Error('HTTP '+r.status);return r.json();}
+const REQUEST_DEADLINE_MS=1200;
+async function post(path,q){
+  const controller=new AbortController();let timer;
+  try{
+    const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>{
+      reject(Error('Request deadline exceeded'));controller.abort();
+    },REQUEST_DEADLINE_MS);});
+    const request=(async()=>{
+      const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q),signal:controller.signal});
+      if(!r.ok)throw Error('HTTP '+r.status);
+      return r.json();
+    })();
+    return await Promise.race([request,deadline]);
+  }finally{clearTimeout(timer);}
+}
 function paint(levels){bars.forEach((b,i)=>b.style.height=Math.min(100,100*Math.sqrt(levels[i]/131070))+'%');}
 function stop(reason='Stopped'){
   epoch++; active=false;pointer=null;heldKey=null;events=[];memoryJobs=[];visuals=[];refreshMorph();for(const s of sources){try{s.stop();}catch{}}sources.clear();paint([0,0,0,0,0,0]);
