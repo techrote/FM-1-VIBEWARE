@@ -63,7 +63,7 @@ def main():
     require(all(x['carry'] == y['carry'] for x, y in zip(forward, reverse)), 'fractional clock changed')
     require(all(row['direction'] == (-1 if 40 <= k < 110 else 1)
                 for k, row in enumerate(reverse)), 'direction schedule')
-    require(all(row['manual'] == (80 <= k < 90) for row in reverse), 'manual schedule')
+    require(all(row['manual'] == (80 <= k < 90) for k, row in enumerate(reverse)), 'manual schedule')
     lib = bind(args.library)
     receipt = {'schema': 'grimoire.orbit-direction.local-replay.v1',
                'state_source': 'offline JS controller and actual native C core; not device telemetry',
