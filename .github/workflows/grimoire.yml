@@ -62,9 +62,15 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Windows ]; then flags=""; else flags="-fsanitize=undefined -fno-sanitize-recover=all"; fi
           gcc -std=c11 -Wall -Wextra -Werror -O2 $flags instruments/grimoire/orbit.c companion/grimoire/session.c companion/grimoire/test_native_ribbon.c -o out/native-ribbon-test
-          ./out/native-ribbon-test > out/native-ribbon-trace.csv
-          node companion/grimoire/test_native_ribbon.cjs out/native-ribbon-trace.csv
+          mkdir -p native-ribbon-out
+          ./out/native-ribbon-test > native-ribbon-out/native-ribbon-trace.csv
+          node companion/grimoire/test_native_ribbon.cjs native-ribbon-out/native-ribbon-trace.csv
           rm out/native-ribbon-test*
+          cp companion/grimoire/{native_ribbon.h,test_native_ribbon.c,test_native_ribbon.cjs} native-ribbon-out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grimoire-native-ribbon-${{ matrix.os }}
+          path: native-ribbon-out/
       - name: Real Chromium playback and fault integration
         if: runner.os == 'Linux'
         timeout-minutes: 8
