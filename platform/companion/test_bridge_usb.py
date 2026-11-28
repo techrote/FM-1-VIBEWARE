@@ -300,14 +300,45 @@ def main():
         assert state["companionReady"] and state["telemetryAvailable"], state
         route.action("note 55 110")
         assert endpoint.advance(100)["nonzero"] > 128
+        malformed_note = next(m for m in reversed(endpoint.sent) if m[6] == 7 and m[15] > 0)
         before = len(endpoint.sent)
-        route.sock.sendall(b'{"type":"ping","id":1,"id":2}\\n')
-        assert route.read()["type"] == "error"
+        # Exercise a genuinely fragmented malformed line. A literal backslash-n
+        # never completes a frame and would leave the decoder waiting forever.
+        malformed = b'{"type":"ping","id":1,"id":2}'
+        route.sock.sendall(malformed)
+        assert select.select([route.server.client.socket], [], [], 5)[0]
+        route.server.step(0)
+        assert route.server.client is not None and not route.server.client.session.closing
+        assert len(endpoint.sent) == before
+        assert not select.select([route.sock], [], [], 0)[0], "partial line must not reply"
+        route.sock.sendall(bytes((10,)))  # actual LF terminates the invalid JSON
+        error = route.read()
+        assert error["type"] == "error" and error["message"] == "Invalid JSON frame", error
         route.await_retired()
         assert len(endpoint.sent) == before + 1 and endpoint.sent[-1][6] == 8
         endpoint.advance(40)
         witnesses["malformed_frame"] = endpoint.advance(80)
         assert witnesses["malformed_frame"]["nonzero"] == 0
+
+        # Recovery must permit new performance but never the retired note.
+        endpoint.advance(1600)
+        native.command("disconnect")
+        native.outgoing.clear()
+        route.connect()
+        state = route.action("connect")
+        assert state["companionReady"] and state["telemetryAvailable"], state
+        discover = next(m for m in reversed(endpoint.sent) if m[6] == 1)
+        assert discover[7:11] != malformed_note[7:11], "fresh session after malformed frame"
+        route.target_error(list(malformed_note), 3)
+        witnesses["malformed_stale_replay"] = endpoint.advance(80)
+        assert witnesses["malformed_stale_replay"]["nonzero"] == 0
+        route.action("note 57 110")
+        witnesses["malformed_recovery_strike"] = endpoint.advance(100)
+        assert witnesses["malformed_recovery_strike"]["nonzero"] > 128
+        route.action("panic")
+        endpoint.advance(40)
+        witnesses["malformed_recovery_panic"] = endpoint.advance(80)
+        assert witnesses["malformed_recovery_panic"]["nonzero"] == 0
         witnesses["bridge_refusals"] = ["protocol", "token", "preauth MIDI",
                                         "unknown profile", "out-of-range MIDI"]
         report = {"status": "PASS", "route": "shared controller / authenticated localhost TCP / actual emulated USB / actual firmware CPU",
