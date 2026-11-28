@@ -206,6 +206,29 @@ with Server(("127.0.0.1",0),Handler) as s:
             n=page.evaluate("window.witness.nonzero")
             page.wait_for_timeout(200)
             assert page.evaluate("window.witness.nonzero")==n
+            # Exhaust every occupancy mask and duration in actual page JS.
+            checked=page.evaluate("""() => {
+                let frames=0;
+                for(let mask=1;mask<16;mask++)for(let seconds=1;seconds<=10;seconds++){
+                    const bank=makeSceneBank(),cues=factoryCues(),slots=[];
+                    for(let i=0;i<4;i++)if(mask&(1<<i)){bank.save(i,cues[i]);slots.push(i)}
+                    const p=makeBankPerformance(bank,seconds);
+                    bank.importText(JSON.stringify({format:'chronomorph-scenes',version:1,slots:[null,null,null,null]}));
+                    if(p.total!==slots.length*seconds*20)throw Error('duration');
+                    for(let i=0;i<p.total;i++){
+                        const frame=p.frame(),slot=slots[Math.floor(i/(seconds*20))];
+                        if(frame.slot!==slot||frame.first!==(i%(seconds*20)===0)||
+                            JSON.stringify(frame.controls)!==JSON.stringify(cues[slot]))throw Error('cue');
+                        frame.controls.patterns[0][1]=0;
+                        if(p.frame().controls.patterns[0][1]!==cues[slot].patterns[0][1])throw Error('mutable snapshot');
+                        if(p.accept()!==i+1)throw Error('cursor');
+                        frames++;
+                    }
+                    if(p.frame()!==null)throw Error('completion');
+                }
+                return frames;
+            }""")
+            assert checked==35200
             # Performer-authored score: sparse slots, exact accepted duration,
             # immutable cue snapshot despite edits/import while performing.
             page.get_by_role("button",name="Start / resume",exact=True).click()
@@ -225,22 +248,25 @@ with Server(("127.0.0.1",0),Handler) as s:
             page.locator("#cueSeconds").fill("1.5")
             page.locator("#performBank").click()
             assert "rejected" in page.locator("#scoreStatus").inner_text()
-            page.locator("#cueSeconds").fill("1")
+            page.locator("#cueSeconds").fill("2")
             requests.clear()
             first,active_token=page.evaluate("""() => {
                 document.querySelector('#performBank').click();return [seq+1,token]
             }""")
             page.wait_for_function("score!==null && score.count>=2")
+            before_custom=page.evaluate("window.witness.nonzero")
             import_bank([None]*4)
             page.locator("#cueSeconds").fill("10")
+            assert page.evaluate("score!==null && score.total===80")
             page.wait_for_function("document.querySelector('#scoreStatus').textContent.startsWith('Score complete')",timeout=15000)
             page.wait_for_function("document.querySelector('#status').textContent.startsWith('Paused')")
-            frames=[q for q in requests if q["token"]==active_token and first<=q["seq"]<first+40]
-            assert len(frames)==40
-            assert [q["seq"] for q in frames]==list(range(first,first+40))
+            frames=[q for q in requests if q["token"]==active_token and first<=q["seq"]<first+80]
+            assert len(frames)==80
+            assert [q["seq"] for q in frames]==list(range(first,first+80))
             for i,q in enumerate(frames):
                 assert q["playing"]==1
-                assert all(q[k]==v for k,v in custom[0 if i<20 else 2].items())
+                assert all(q[k]==v for k,v in custom[0 if i<40 else 2].items())
+            assert page.evaluate("window.witness.nonzero")>before_custom
             assert page.evaluate("token")==active_token
             assert page.evaluate("score===null && playing===0")
             page.get_by_role("button",name="Export scenes",exact=True).click()
