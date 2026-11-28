@@ -126,7 +126,12 @@ def main():
         extracted=root/"original package"
         extracted.mkdir()
         extract(args.archive,extracted,args.digest, allowed_nested=(ECO_SUCCESSOR_FILES + (ECO_ARC_FILES if args.live_arc else ())) if args.successor else ())
-        for name in SOURCE + (("live_arc_fixture.py",) if args.live_arc else ()):
+        # Preserve historical packages, but require every present memory header on both sides.
+        memory_header = "environment_memory.h"
+        has_memory = (source/memory_header).is_file()
+        assert has_memory == (extracted/memory_header).is_file(), "memory header presence mismatch"
+        source_files = SOURCE + ((memory_header,) if has_memory else ())
+        for name in source_files + (("live_arc_fixture.py",) if args.live_arc else ()):
             assert (extracted/name).read_bytes()==(source/name).read_bytes(),name
         for i,h in enumerate(WAVS):
             assert sha((extracted/f"{i}.wav").read_bytes())==h
@@ -135,7 +140,7 @@ def main():
             (extracted/exe).chmod(0o755)
         rebuilt=root/"independent rebuild"
         rebuilt.mkdir()
-        for name in SOURCE+("host.c","test.c"):
+        for name in source_files+("host.c","test.c"):
             shutil.copy2(source/name,rebuilt/name)
         flags=["gcc","-std=c11","-O2","-Wall","-Wextra","-Werror"]
         if not windows:
