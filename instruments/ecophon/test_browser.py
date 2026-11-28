@@ -96,7 +96,7 @@ with make_server(Path(sys.argv[1]),0) as server:
                     const memory=path==='/memory/step'&&nativeRecall?.slot==="A"?nativeRecall.block+1:null;
                     const result=await original(path,data);
                     if(path==='/arc/start')window.ecoArcStarts.push(result);
-                    if(path==='/memory/capture')window.ecoCaptures.push(result);
+                    if(path==='/memory/capture')window.ecoCaptures.push({...result,preceding:window.ecoWitness.at(-1)});
                     if(path==='/step'||path==='/memory/step'||path==='/arc/step'){
                         window.ecoWitness.push({path,controls:path==='/step'?[data.fertility,data.sharing,data.pressure,data.frozen]:[...result.controls,result.frozen],
                             living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:[...result.controls,result.frozen],generation:result.generation,arcBlock:path==='/arc/step'?result.arc_block:null,arcRemaining:path==='/arc/step'?result.arc_remaining:null,memoryBlock:memory});
@@ -182,7 +182,8 @@ with make_server(Path(sys.argv[1]),0) as server:
             assert all(r["path"]=="/arc/step" and r["arcRemaining"]==240-i for i,r in enumerate(rows,1))
             captured=page.evaluate("window.ecoCaptures[0]")
             assert captured["slot"]==0 and captured["generation"]==rows[0]["generation"]
-            assert captured["controls"] in [r["controls"][:3] for r in rows[:40]]
+            assert captured["preceding"]["path"]=="/arc/step"
+            assert captured["controls"]==captured["preceding"]["controls"][:3]
             assert starts[0]["generation"]==rows[0]["generation"]
             for i,row in enumerate(rows,1):
                 expected=(*ramp(origin,BASE,i,40),0) if i<=40 else controls(i-1,"habitat-arc")
