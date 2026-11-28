@@ -1,0 +1,148 @@
+name: Xenoresonator native audition
+on:
+  push:
+    paths:
+      - 'instruments/xenoresonator/**'
+      - '.github/workflows/xenoresonator-native.yml'
+  pull_request:
+    paths:
+      - 'instruments/xenoresonator/**'
+      - '.github/workflows/xenoresonator-native.yml'
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: instruments/xenoresonator
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source before building
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SOURCE" ]; then
+            printf 'Source mismatch: expected %s, checked out %s\n' "$EXPECTED_SOURCE" "$actual" >&2
+            exit 1
+          fi
+          printf 'Qualified source: %s\n' "$actual"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build and test
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c test.c -o test.exe
+          ./test.exe
+          gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c test_material_memory.c -o material-memory.exe
+          ./material-memory.exe
+          gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c render.c -o render.exe
+          python test_http.py ./render.exe
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC xeno.c live_bridge.c -o live.dll
+          python test_live.py ./live.dll
+          python test_memory_consumer.py ./live.dll
+      - name: Actual-core material passage and causal coupling comparison
+        run: |
+          python material_passage.py ./live.dll 'material passage'
+          python companion_replay.py 'material passage' 'material passage/companion-replay.json'
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('material passage/companion-replay.json').read_bytes()).hexdigest() == '9533678e9ec8e5fcbc46c868854365672560cc742ffe16a3550906c1c4b0c5dd'"
+          cp material_passage.py companion_replay.py 'material passage/'
+          git rev-parse HEAD > 'material passage/SOURCE-REVISION.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-material-passage-${{ matrix.os }}
+          path: instruments/xenoresonator/material passage/
+          if-no-files-found: error
+      - name: Native factory-patch gallery and held-note causal comparison
+        run: |
+          python patch_gallery.py ./live.dll 'patch gallery'
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('patch gallery/receipt.json').read_bytes()).hexdigest() == 'aa676b6c7996913728bb0859713a96b56f61c3f7a17159460fb11d8fff12f66c'"
+          cp patch_gallery.py live.html 'patch gallery/'
+          git rev-parse HEAD > 'patch gallery/SOURCE-REVISION.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-patch-gallery-${{ matrix.os }}
+          path: instruments/xenoresonator/patch gallery/
+          if-no-files-found: error
+      - name: Native user material recall with matched macro-only ablation
+        run: |
+          python user_material_replay.py ./live.dll 'user material replay'
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('user material replay/receipt.json').read_bytes()).hexdigest() == 'c974de400e78af12aeef9dd511f890e3fb5cc28bdebcd4ae1d2a6bda126dbb1d'"
+          cp user_material_replay.py 'user material replay/'
+          git rev-parse HEAD > 'user material replay/SOURCE-REVISION.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-user-material-replay-${{ matrix.os }}
+          path: instruments/xenoresonator/user material replay/
+          if-no-files-found: error
+      - name: Native A/B material morph comparative score
+        run: |
+          python material_morph_replay.py ./live.dll 'material morph replay'
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('material morph replay/receipt.json').read_bytes()).hexdigest() == '2418c5fc5b6c940d87d2f8964ad63463c452c3fded5094eb17fde72b78ff53b7'"
+          cp material_morph_replay.py live.html xeno.c xeno.h material_memory.h live_bridge.c 'material morph replay/'
+          git rev-parse HEAD > 'material morph replay/SOURCE-REVISION.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-material-morph-${{ matrix.os }}
+          path: instruments/xenoresonator/material morph replay/
+          if-no-files-found: error
+      - name: Create audition package and PCM receipts
+        run: |
+          mkdir -p 'audition package'
+          cp render.exe audition.py test_http.py README.md profile.json xeno.c xeno.h test.c material_memory.h test_material_memory.c test_memory_consumer.py render.c live.dll live.py live.html live_bridge.c test_live.py test_browser.py 'audition package/'
+          for p in 0 1 2 3; do ./render.exe "audition package/material$p.wav" "$p" 76 12 90 48 110 phrase; done
+          ./render.exe 'audition package/uncoupled.wav' 2 76 12 0 48 110 phrase
+          cd 'audition package'
+          python -c "import wave,glob,hashlib; print('\n'.join(p+' '+hashlib.sha256(wave.open(p).readframes(144000)).hexdigest() for p in sorted(glob.glob('*.wav'))))" > PCM-SHA256.txt
+          python test_http.py ./render.exe
+          python test_live.py ./live.dll
+          python test_memory_consumer.py ./live.dll
+          git rev-parse HEAD > SOURCE-REVISION.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-${{ matrix.os }}
+          path: instruments/xenoresonator/audition package/
+          if-no-files-found: error
+
+  browser:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: instruments/xenoresonator
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source before building
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SOURCE" ]; then
+            printf 'Source mismatch: expected %s, checked out %s\n' "$EXPECTED_SOURCE" "$actual" >&2
+            exit 1
+          fi
+          printf 'Qualified source: %s\n' "$actual"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build native browser fixture in a path with spaces
+        run: |
+          mkdir -p 'browser audition'
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC xeno.c live_bridge.c -o 'browser audition/live.dll'
+          cp live.py live.html test_browser.py 'browser audition/'
+      - name: Install pinned Chromium test dependency
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Qualify actual browser audio and controls
+        run: python 'browser audition/test_browser.py' 'browser audition/live.dll'

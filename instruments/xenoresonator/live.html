@@ -1,0 +1,148 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Xenoresonator Live</title>
+<style>body{background:#12171c;color:#dce5e9;font:16px system-ui;max-width:640px;margin:auto;padding:20px}label{display:block;margin:12px 0}input[type=range]{width:100%}button,select,input{font:inherit}button{padding:12px;touch-action:none}#strike{background:#84c5bc;color:#101819}#xy{height:150px;background:#223c42;touch-action:none;position:relative;border:1px solid #7b9ca1}#dot{position:absolute;width:14px;height:14px;background:#e0d0a0;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none}#modes{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;height:110px;align-items:end}#modes div{height:0;background:#7fc5bb;min-height:2px}#modes div:nth-child(n+4){background:#c9a16e}small{color:#aebdc2}</style>
+<h1>Xenoresonator</h1><p>Live coupled materials · local native engine</p>
+<label>Material <select id="p"><option value="0">Ceramic</option><option value="1">Woodglass</option><option value="2">Alien metal</option><option value="3">Membrane</option></select></label>
+<label>Excitation / X <input type="range" id="e" min="0" max="127" value="76"></label><label>Damping / Y <input type="range" id="d" min="0" max="127" value="12"></label>
+<div id="xy" aria-label="Excitation and damping XY surface"><span id="dot"></span></div>
+<label>Coupling <input type="range" id="c" min="0" max="127" value="90"></label><label>Pitch <input type="range" id="n" min="36" max="84" value="48"></label><label>Velocity <input type="range" id="v" min="1" max="127" value="110"></label>
+<button id="start">Start audio</button> <button id="strike" disabled>Hold to strike</button> <button id="stop">Panic / stop</button>
+<p><small>Chromatic keys: focus Hold to strike (automatically focused after Start audio). Z S X D C V G B H N J M , = C through C. One held note at a time; release before the next note. While focused here, 1–6 recall factory patches, arrow keys adjust excitation/damping, and [ / ] adjust coupling; 7 recalls user material A; 8 / 9 step the A/B morph toward A / B. These controls do not release the note.</small></p>
+<label>Keyboard octave <select id="octave"><option value="36">C2–C3</option><option value="48" selected>C3–C4</option><option value="60">C4–C5</option><option value="72">C5–C6</option></select></label>
+<label>Factory patch <select id="patch"><option value="">Custom controls</option></select></label><small>Changes material, excitation, damping and coupling together; does not strike or reset. Note and velocity stay unchanged. With Hold to strike focused, use 1–6 in the listed order to switch patches without releasing a held key.</small>
+<details><summary>User material A and A/B morph</summary><p><small>Capture current material and macros, or import a bounded local JSON document. Import changes only the slot; Recall (or 7 while playing) applies it without a new strike. Copy the document to retain it between page reloads. No device transport.</small></p><label>Material document <textarea id="user-doc" rows="4" maxlength="256" style="width:100%;box-sizing:border-box;font:inherit"></textarea></label><button id="user-capture" type="button">Capture controls</button> <button id="user-import" type="button">Import to slot</button> <button id="user-recall" type="button" disabled>Recall slot</button><p id="user-status" role="status">Slot empty</p>
+<label>Material B document <textarea id="morph-b-doc" rows="4" maxlength="256" style="width:100%;box-sizing:border-box;font:inherit"></textarea></label><button id="morph-b-capture" type="button">Capture B controls</button> <button id="morph-b-import" type="button">Import B</button><p id="morph-b-status" role="status">B empty</p>
+<label>A/B morph (last requested position) <input type="range" id="morph" min="0" max="127" value="0" disabled></label><p id="morph-status" role="status">Capture or import both endpoints</p><small>Explicit morph requests blend excitation, damping and coupling; material switches at position 64 (not continuous physical material interpolation). Keys 8 / 9 move eight steps while Hold to strike is focused. Capturing or importing either endpoint does not apply it. Manual edits can change controls after a morph; reconnect never recalls endpoints automatically. Page-local only.</small></details>
+<script type="application/json" id="patch-data">[{"id":"ceramic-chime","name":"Ceramic chime","p":0,"e":54,"d":0,"c":100},{"id":"ceramic-click","name":"Ceramic click","p":0,"e":115,"d":92,"c":12},{"id":"woodglass-pluck","name":"Woodglass pluck","p":1,"e":48,"d":24,"c":65},{"id":"alien-bell","name":"Alien bell","p":2,"e":105,"d":0,"c":100},{"id":"alien-scrape","name":"Alien scrape","p":2,"e":127,"d":42,"c":14},{"id":"membrane-pulse","name":"Membrane pulse","p":3,"e":118,"d":9,"c":80}]</script>
+<p id="status" role="status">Stopped</p><div id="modes" aria-hidden="true"><div></div><div></div><div></div><div></div><div></div><div></div></div><p><small>Body A (teal), body B (ochre): actual local modal magnitude proxies sampled within each audio block. Not device telemetry. XY and material changes affect the live decay. No MIDI or device connection.</small></p>
+<script>
+const $=id=>document.getElementById(id), bars=[...$('modes').children];
+let ctx,token=null,epoch=0,seq=0,next=0,opening=false,active=false,events=[],visuals=[],sources=new Set(),gaps=0;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function post(path,q){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q)});if(!r.ok)throw Error('HTTP '+r.status);return r.json();}
+function paint(levels){bars.forEach((b,i)=>b.style.height=Math.min(100,100*Math.sqrt(levels[i]/131070))+'%');}
+function stop(reason='Stopped'){
+  epoch++; active=false;pointer=null;heldKey=null;events=[];visuals=[];for(const s of sources){try{s.stop();}catch{}}sources.clear();paint([0,0,0,0,0,0]);
+  const old=token;token=null;if(old)post('/panic',{token:old}).catch(()=>{});
+  $('strike').disabled=true;$('start').disabled=opening;$('status').textContent=reason;
+}
+function queue(event){if(!active)return;if(events.length>=8){stop('Gesture overflow — muted');return;}
+  events.push({event,n:Number($('n').value),v:Number($('v').value)});}
+async function start(){if(opening||active)return;opening=true;$('start').disabled=true;const g=++epoch;
+  try{ctx??=new AudioContext();await ctx.resume();const opened=await post('/open',{version:1});
+    if(g!==epoch){await post('/panic',{token:opened.token}).catch(()=>{});return;}
+    token=opened.token;seq=0;gaps=0;next=ctx.currentTime+.08;active=true;$('strike').disabled=false;$('strike').focus();$('status').textContent='Live';pump(g);
+  }catch(e){if(g===epoch)stop(String(e));}finally{opening=false;$('start').disabled=active;}}
+async function pump(g){try{while(active&&epoch===g){
+  if(next-ctx.currentTime>.10){await sleep(10);continue;}
+  const q={token,seq};for(const k of ['p','e','d','c','n','v'])q[k]=Number($(k).value);Object.assign(q,events.shift()||{event:0});
+  const r=await post('/block',q);if(!active||epoch!==g)return;if(r.seq!==seq++)throw Error('Sequence mismatch');
+  const bytes=Uint8Array.from(atob(r.pcm),c=>c.charCodeAt(0));if(bytes.length!==2400)throw Error('PCM size');
+  const dv=new DataView(bytes.buffer),buffer=ctx.createBuffer(1,1200,24000),out=buffer.getChannelData(0);for(let i=0;i<1200;i++)out[i]=dv.getInt16(2*i,true)/32768;
+  if(next<ctx.currentTime){gaps++;next=ctx.currentTime+.02;}
+  const source=ctx.createBufferSource();source.buffer=buffer;source.connect(ctx.destination);sources.add(source);source.onended=()=>sources.delete(source);source.start(next);
+  if(visuals.length>=8)visuals.shift();visuals.push({at:next,levels:r.levels});next+=.05;
+  $('status').textContent='Live · buffer gaps '+gaps;
+}}catch(e){if(g===epoch)stop('Connection lost — muted: '+e.message);}}
+function animate(){while(ctx&&visuals.length&&visuals[0].at<=ctx.currentTime)paint(visuals.shift().levels);requestAnimationFrame(animate);}animate();
+$('start').onclick=start;$('stop').onclick=()=>stop();
+let pointer=null,heldKey=null;const strike=$('strike');strike.onpointerdown=e=>{if(pointer!==null||heldKey!==null||!active)return;pointer=e.pointerId;strike.setPointerCapture(pointer);queue(1);};
+function release(e){if(e.pointerId!==pointer)return;pointer=null;queue(2);}strike.onpointerup=release;strike.onpointercancel=release;strike.onlostpointercapture=release;
+function releaseKey(){if(heldKey===null)return;heldKey=null;queue(2);}
+const chromatic=['KeyZ','KeyS','KeyX','KeyD','KeyC','KeyV','KeyG','KeyB','KeyH','KeyN','KeyJ','KeyM','Comma'];
+function keyIdentity(e){return e.key===' '||e.key==='Enter'?e.key:chromatic.includes(e.code)?e.code:null;}
+strike.onkeydown=e=>{
+  if(e.ctrlKey||e.altKey||e.metaKey)return;
+  if(performanceKey(e))return;
+  const key=keyIdentity(e);if(key===null)return;e.preventDefault();if(e.repeat||heldKey!==null||pointer!==null||!active)return;
+  const semitone=chromatic.indexOf(key);if(semitone>=0)$('n').value=Number($('octave').value)+semitone;heldKey=key;queue(1);};
+strike.onkeyup=e=>{const key=keyIdentity(e);if(key===null)return;e.preventDefault();if(key===heldKey)releaseKey();};
+strike.onblur=releaseKey;
+function dot(){$('dot').style.left=Number($('e').value)/127*100+'%';$('dot').style.top=(1-Number($('d').value)/127)*100+'%';}dot();
+const patchPicker=$('patch'),patches=JSON.parse($('patch-data').textContent);
+for(const patch of patches)patchPicker.add(new Option(patch.name,patch.id));
+function customPatch(){patchPicker.value='';}
+function applyPatch(patch){
+  if(!patch)return;
+  patchPicker.value=patch.id;
+  for(const k of ['p','e','d','c'])$(k).value=patch[k];
+  dot();
+}
+patchPicker.onchange=()=>applyPatch(patches.find(p=>p.id===patchPicker.value));
+const userSchema='xenoresonator.material/1', userKeys=['p','e','d','c'];
+let userPatch=null,morphB=null;
+function parseUserPatch(raw){
+  if(typeof raw!=='string'||raw.length>256)throw Error('Document size');
+  const q=JSON.parse(raw);
+  if(!q||typeof q!=='object'||Array.isArray(q)||Object.keys(q).length!==5||
+     !Object.hasOwn(q,'schema')||q.schema!==userSchema||
+     !userKeys.every(k=>Object.hasOwn(q,k)&&Number.isInteger(q[k])&&q[k]>=0&&q[k]<=(k==='p'?3:127)))throw Error('Material format or range');
+  return Object.fromEntries(userKeys.map(k=>[k,q[k]]));
+}
+function storeUserPatch(patch){
+  userPatch=patch;
+  $('user-doc').value=JSON.stringify({schema:userSchema,...patch});
+  $('user-recall').disabled=false;
+  $('user-status').textContent='Slot ready — recall explicitly';
+  refreshMorph();
+}
+function recallUserPatch(){
+  if(!userPatch)return;
+  for(const k of userKeys)$(k).value=userPatch[k];
+  customPatch();dot();
+  $('user-status').textContent='User material recalled';
+}
+$('user-capture').onclick=()=>storeUserPatch(Object.fromEntries(userKeys.map(k=>[k,Number($(k).value)])));
+$('user-import').onclick=()=>{
+  try{storeUserPatch(parseUserPatch($('user-doc').value));}
+  catch(e){$('user-status').textContent='Rejected — previous slot unchanged';}
+};
+$('user-recall').onclick=recallUserPatch;
+function refreshMorph(){
+  $('morph').disabled=!(userPatch&&morphB);
+  $('morph-status').textContent=$('morph').disabled?'Capture or import both endpoints':'Endpoints ready — move morph explicitly';
+}
+function storeMorphB(patch){
+  morphB=patch;
+  $('morph-b-doc').value=JSON.stringify({schema:userSchema,...patch});
+  $('morph-b-status').textContent='B ready — move morph explicitly';
+  refreshMorph();
+}
+$('morph-b-capture').onclick=()=>storeMorphB(Object.fromEntries(userKeys.map(k=>[k,Number($(k).value)])));
+$('morph-b-import').onclick=()=>{
+  try{storeMorphB(parseUserPatch($('morph-b-doc').value));}
+  catch(e){$('morph-b-status').textContent='Rejected — previous B unchanged';}
+};
+function applyMorph(position){
+  if(!userPatch||!morphB||!Number.isInteger(position)||position<0||position>127)return false;
+  const values={p:position<64?userPatch.p:morphB.p};
+  for(const k of ['e','d','c'])values[k]=Math.floor((userPatch[k]*(127-position)+morphB[k]*position+63)/127);
+  for(const k of userKeys)$(k).value=values[k];
+  $('morph').value=position;customPatch();dot();
+  $('morph-status').textContent='Morph requested '+position+'/127 — manual edits may supersede';
+  return true;
+}
+$('morph').oninput=()=>applyMorph(Number($('morph').value));
+function stepMorph(delta){
+  applyMorph(Math.max(0,Math.min(127,Number($('morph').value)+delta)));
+}
+const macroKeys={ArrowLeft:['e',-4],ArrowRight:['e',4],ArrowDown:['d',-4],ArrowUp:['d',4],BracketLeft:['c',-4],BracketRight:['c',4]};
+function performanceKey(e){
+  const slot=/^Digit[1-6]$/.test(e.code)?Number(e.code.slice(-1))-1:-1;
+  const macro=Object.hasOwn(macroKeys,e.code)?macroKeys[e.code]:null;
+  const userRecall=e.code==='Digit7',morphStep=e.code==='Digit8'?-8:e.code==='Digit9'?8:0;
+  if(slot<0&&!macro&&!userRecall&&!morphStep)return false;
+  e.preventDefault();
+  if(!active)return true;
+  if(slot>=0){if(!e.repeat)applyPatch(patches[slot]);return true;}
+  if(userRecall){if(!e.repeat)recallUserPatch();return true;}
+  if(morphStep){stepMorph(morphStep);return true;}
+  const [k,delta]=macro,input=$(k),old=Number(input.value),value=Math.max(0,Math.min(127,old+delta));
+  if(value!==old){input.value=value;customPatch();dot();}
+  return true;
+}
+$('p').onchange=customPatch;$('c').oninput=customPatch;
+$('e').oninput=$('d').oninput=()=>{customPatch();dot();};
+function xy(e){const r=$('xy').getBoundingClientRect(),clamp=v=>Math.max(0,Math.min(127,Math.round(v*127)));$('e').value=clamp((e.clientX-r.left)/r.width);$('d').value=clamp(1-(e.clientY-r.top)/r.height);customPatch();dot();}
+$('xy').onpointerdown=e=>{$('xy').setPointerCapture(e.pointerId);xy(e);};$('xy').onpointermove=e=>{if($('xy').hasPointerCapture(e.pointerId))xy(e);};
+window.addEventListener('blur',()=>stop('Focus lost — muted'));document.addEventListener('visibilitychange',()=>{if(document.hidden)stop('Hidden — muted');});
+</script></html>
