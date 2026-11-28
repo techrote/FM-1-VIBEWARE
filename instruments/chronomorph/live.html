@@ -130,7 +130,27 @@ $('importScenes').onclick=()=>{
     $('sceneStatus').textContent='Scene bank imported — recall a slot to apply it';
   }catch(e){$('sceneStatus').textContent='Import rejected — existing scenes unchanged'}
 };
-async function request(path,q,signal){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q),signal});if(!r.ok)throw Error('Session rejected: '+r.status);return r.json()}
+async function request(path,q,signal){
+  const controller=new AbortController();
+  const relay=()=>controller.abort();
+  if(signal?.aborted)relay();else signal?.addEventListener('abort',relay,{once:true});
+  let timer, rejectAbort;
+  const cancelled=new Promise((_,reject)=>{rejectAbort=()=>reject(Error('Request cancelled'));});
+  controller.signal.addEventListener('abort',rejectAbort,{once:true});
+  if(controller.signal.aborted)rejectAbort();
+  const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>{reject(Error('Request timed out'));controller.abort()},1200)});
+  try{
+    const work=(async()=>{
+      const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q),signal:controller.signal});
+      if(!r.ok)throw Error('Session rejected: '+r.status);
+      return await r.json();
+    })();
+    return await Promise.race([deadline,cancelled,work]);
+  }finally{
+    clearTimeout(timer);signal?.removeEventListener('abort',relay);
+    controller.signal.removeEventListener('abort',rejectAbort);
+  }
+}
 function clearAudio(){for(const s of sources){try{s.stop()}catch{}}sources.clear();visual=[];next=ctx?ctx.currentTime:0;for(let i=0;i<3;i++)for(const b of $('lane'+i).children)b.classList.remove('current')}
 function disconnect(){cancelScore('Disconnected');gen++;playEpoch++;playing=0;clearTimeout(timer);if(inflight)inflight.abort();inflight=null;clearAudio();const old=token;token=null;if(old)request('/panic',{token:old}).catch(()=>{});$('status').textContent='Stopped / disconnected'}
 async function begin(){disconnect();const g=gen;try{if(!ctx)ctx=new AudioContext();await ctx.resume();if(g!==gen)return;const controller=new AbortController();inflight=controller;const r=await request('/session',{version:1,preset:$('preset').selectedIndex,seed:clamp('seed',1,2147483647)},controller.signal);if(g!==gen){request('/panic',{token:r.token}).catch(()=>{});return}inflight=null;token=r.token;seq=0;playing=1;next=ctx.currentTime+.03;pump(g)}catch(e){if(g===gen){disconnect();$('status').textContent=e.message}}}
