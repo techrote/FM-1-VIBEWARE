@@ -1,7 +1,7 @@
 # Sourced from ci.sh only in the isolated rate-chrono stage.
 (
   set -euo pipefail
-  PROBE="$RES/rate-chronophon"
+  PROBE="$RES/rate-chronomorph"
   mkdir "$PROBE"
   CHRONO=be57d9f77e9325271adbd4558dfd554c6cd81e19
   checkout https://github.com/techrote/FM-1-VIBEWARE.git "$TMP/chrono-core" "$CHRONO"
@@ -18,9 +18,9 @@
     else
       python3 "$HERE/rate_chronomorph.py" prepare "$HERE/chrono_app.c" "$HERE/chrono_runtime.h" "$variant" "$mode"
     fi
-    cp "$HERE/test_chronomorph_runtime.c" "$variant/test_chronomorph_runtime.c"
+    cp "$HERE/test_chrono_runtime.c" "$variant/test_chrono_runtime.c"
     for cc in gcc clang; do
-      "$cc" -std=c11 -Wall -Wextra -Werror -O2 -fsanitize=undefined -fno-sanitize-recover=all -I"$variant" -I"$ENGINE" -I"$HERE" "$variant/test_chronomorph_runtime.c" "$ENGINE/chrono.c" -o "$TMP/chrono-rate-test" 2>&1 | tee "$PROBE/$mode-$cc-build.txt"
+      "$cc" -std=c11 -Wall -Wextra -Werror -O2 -fsanitize=undefined -fno-sanitize-recover=all -I"$variant" -I"$ENGINE" -I"$HERE" "$variant/test_chrono_runtime.c" "$ENGINE/chrono.c" -o "$TMP/chrono-rate-test" 2>&1 | tee "$PROBE/$mode-$cc-build.txt"
       "$TMP/chrono-rate-test" | tee "$PROBE/$mode-$cc.txt"
     done
     cp "$variant/dinghy.c" firmware/src/dinghy.c
