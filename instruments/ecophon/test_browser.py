@@ -90,17 +90,17 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.evaluate("""() => {
                 window.ecoWitness=[];
                 const original=post, originalControls=stepControls;
-                let arcBlock=null, memoryBlock=null;
+                let arcBlock=null;
                 stepControls=()=>{
                     arcBlock=cue?.id==="cueArc"?cue.block+1:null;
-                    memoryBlock=cue?.id==="recallA"?cue.block+1:null;
                     return originalControls();
                 };
                 post=async(path,data)=>{
-                    const block=path==='/step'?arcBlock:null, memory=path==='/step'?memoryBlock:null;
+                    const block=path==='/step'?arcBlock:null;
+                    const memory=path==='/memory/step'&&nativeRecall?.slot==="A"?nativeRecall.block+1:null;
                     const result=await original(path,data);
-                    if(path==='/step'){
-                        window.ecoWitness.push({controls:[data.fertility,data.sharing,data.pressure,data.frozen],
+                    if(path==='/step'||path==='/memory/step'){
+                        window.ecoWitness.push({path,controls:path==='/step'?[data.fertility,data.sharing,data.pressure,data.frozen]:[...result.controls,result.frozen],
                             living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:[...result.controls,result.frozen],generation:result.generation,arcBlock:block,memoryBlock:memory});
                         if(window.ecoWitness.length>256)window.ecoWitness.shift();
                     }
@@ -196,11 +196,13 @@ with make_server(Path(sys.argv[1]),0) as server:
                     page.locator("#"+name).focus()
                     page.keyboard.press(key)
             set_environment(("Home","End","Home"))
+            page.wait_for_function("window.ecoWitness.slice(-1)[0].echo.join(',')==='0,255,0,0'")
             page.click("#storeA")
-            assert "F 0 / S 255 / P 0" in page.locator("#memoryA").inner_text()
+            page.wait_for_function("document.querySelector('#memoryA').textContent==='F 0 / S 255 / P 0'")
             set_environment(("End","Home","End"))
+            page.wait_for_function("window.ecoWitness.slice(-1)[0].echo.join(',')==='255,0,255,0'")
             page.click("#storeB")
-            assert "F 255 / S 0 / P 255" in page.locator("#memoryB").inner_text()
+            page.wait_for_function("document.querySelector('#memoryB').textContent==='F 255 / S 0 / P 255'")
             page.evaluate("window.ecoWitness=[]")
             page.click("#recallA")
             page.wait_for_function("window.ecoWitness.some(r=>r.memoryBlock===3)")
@@ -209,11 +211,18 @@ with make_server(Path(sys.argv[1]),0) as server:
             recalled=page.evaluate("window.ecoWitness.filter(r=>r.memoryBlock!==null)")
             assert [r["memoryBlock"] for r in recalled]==list(range(1,41))
             for i,row in enumerate(recalled,1):
-                assert row["controls"]==row["echo"]==[*ramp((255,0,255),(0,255,0),i,40),0],(i,row)
+                assert row["path"]=="/memory/step" and row["echo"]==[*ramp((255,0,255),(0,255,0),i,40),0],(i,row)
                 assert row["generation"]==recalled[0]["generation"]
                 assert row["ticks"]==recalled[0]["ticks"]+(i-1)*10
             assert "40/40 complete" in page.locator("#cueStatus").inner_text()
             assert "F 255 / S 0 / P 255" in page.locator("#memoryB").inner_text()
+            assert page.locator("#memoryA").inner_text()!="F 0 / S 255 / P 0"
+            page.click("#recallB")
+            page.wait_for_function("nativeRecall?.slot==='B' && nativeRecall.block>=2")
+            page.locator("#sharing").focus()
+            page.keyboard.press("Home")
+            page.wait_for_function("window.ecoWitness.slice(-2).length===2 && window.ecoWitness.slice(-2).every(r=>r.path==='/step' && r.echo[1]===0)")
+            assert "Manual" in page.locator("#cueStatus").inner_text()
             page.click("#recallB")
             page.check("#frozen")
             assert page.is_disabled("#recallA") and page.is_disabled("#recallB")
@@ -224,6 +233,14 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.wait_for_function("window.ecoRms()<0.000001")
             assert page.is_disabled("#recallA") and page.is_disabled("#recallB")
             assert page.is_disabled("#cueArc")
+            remembered=page.locator("#memoryA").inner_text()
+            page.reload()
+            page.click("#start")
+            page.wait_for_function("window.ecoRms()>0.001")
+            assert page.locator("#memoryA").inner_text()==remembered
+            assert page.locator("#memoryB").inner_text()=="F 255 / S 0 / P 255"
+            page.click("#stop")
+            page.wait_for_function("window.ecoRms()<0.000001")
             assert not errors,errors
             browser.close()
             print("PASS Chromium native audio graph, XY gesture, regime reset, panic, fault, reconnect and actual-state population feedback/manual override and whole Habitat Arc 240-block playback")
