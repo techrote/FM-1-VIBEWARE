@@ -26,8 +26,14 @@ class Fixture:
             fn.restype = C.c_int
         self.lib.ecof_memory_step.argtypes = [C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
         self.lib.ecof_memory_step.restype = C.c_int
+        self.lib.ecof_memory_get.argtypes = [C.c_uint,C.POINTER(C.c_uint8)]
+        self.lib.ecof_memory_get.restype = C.c_int
         self.gen = 0
         self.active = False
+
+    def memory_slot(self, slot):
+        values = (C.c_uint8*3)()
+        return list(values) if self.lib.ecof_memory_get(slot,values) else None
 
     def handle(self, route, d):
         def fields(spec):
@@ -41,7 +47,8 @@ class Fixture:
             self.gen += 1
             self.lib.ecof_reset(d["seed"],d["preset"])
             self.active = True
-            return {"generation":self.gen,"controls":PRESETS[d["preset"]]}
+            return {"generation":self.gen,"controls":PRESETS[d["preset"]],
+                    "memory_slots":[self.memory_slot(i) for i in range(2)]}
         spec = {"generation":(1,2**53-1)}
         if route == "/step":
             spec.update({"fertility":(0,255),"sharing":(0,255),"pressure":(0,255),"frozen":(0,1)})
@@ -60,7 +67,8 @@ class Fixture:
             fn = self.lib.ecof_memory_capture if route.endswith("capture") else self.lib.ecof_memory_recall
             if not fn(d["slot"]):
                 raise RuntimeError("native memory rejected request")
-            return {"generation":self.gen,"slot":d["slot"],"accepted":True}
+            return {"generation":self.gen,"slot":d["slot"],"accepted":True,
+                    "controls":self.memory_slot(d["slot"])}
         pcm=(C.c_int16*FRAMES)()
         snap=(C.c_uint32*56)()
         if route == "/memory/step":
