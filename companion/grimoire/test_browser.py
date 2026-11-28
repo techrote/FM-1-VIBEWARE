@@ -71,9 +71,9 @@ def run(library, executable, screenshot):
                 # Changing the trajectory must keep the explicitly held gate and
                 # advance the same clock; verify the bright arc via played native XY.
                 page.locator('#ribbonShape').select_option('crown')
-                page.wait_for_function('held && ribbon.shape==="crown" && ribbon.blend===0 && played.gate===1 && played.y>=96 && played.y<=120 && played.localOrbit?.shape==='crown' && played.localOrbit.path[0][1]===96 && peak()>.02')
+                page.wait_for_function('held && ribbon.shape==="crown" && ribbon.blend===0 && played.gate===1 && played.y>=96 && played.y<=120 && played.localOrbit?.shape==="crown" && played.localOrbit.path[0][1]===96 && peak()>.02')
                 page.locator('#ribbonShape').select_option('pendulum')
-                page.wait_for_function('held && ribbon.shape==="pendulum" && ribbon.blend===0 && played.gate===1 && played.y>=24 && played.y<=48 && played.localOrbit?.shape==='pendulum' && played.localOrbit.path[0][1]===24 && peak()>.02')
+                page.wait_for_function('held && ribbon.shape==="pendulum" && ribbon.blend===0 && played.gate===1 && played.y>=24 && played.y<=48 && played.localOrbit?.shape==="pendulum" && played.localOrbit.path[0][1]===24 && peak()>.02')
                 # Eight-point sketch, with explicit apply and continued gate.
                 page.locator('#sketchEditor summary').click()
                 sketch = page.locator('#sketchPad')
@@ -95,7 +95,7 @@ def run(library, executable, screenshot):
                 page.locator('#sketchImport').click()
                 assert page.evaluate('ribbon.sketch===originalSketch && held && draft.length===8')
                 page.locator('#sketchApply').click()
-                page.wait_for_function('held && ribbon.blend===0 && played.gate===1 && played.y>=52 && played.y<=64 && played.x>=22 && played.x<=38 && played.localOrbit?.shape==='sketch' && played.localOrbit.path[0][1]===52 && peak()>.02')
+                page.wait_for_function('held && ribbon.blend===0 && played.gate===1 && played.y>=52 && played.y<=64 && played.x>=22 && played.x<=38 && played.localOrbit?.shape==="sketch" && played.localOrbit.path[0][1]===52 && peak()>.02')
                 page.locator('#sketchEditor summary').click()
                 page.locator('#pad').scroll_into_view_if_needed()
                 box = page.locator('#pad').bounding_box()
