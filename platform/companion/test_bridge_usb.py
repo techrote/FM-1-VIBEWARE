@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from unittest.mock import patch
 
 CYD, SIM, EMU, XIP, OUTPUT = map(Path, sys.argv[1:6])
 INSTRUMENT = sys.argv[6] if len(sys.argv) == 7 else "xeno"
@@ -23,7 +24,7 @@ PROFILE_ID = 3 if GRIMOIRE else 2
 sys.path.insert(0, str(CYD))
 from bridge.midi_io import validate_midi_bytes
 from bridge.protocol import LineDecoder, encode_frame
-from bridge.server import BridgeServer
+from bridge.server import BridgeServer, MAX_OUTGOING_BYTES
 
 spec = importlib.util.spec_from_file_location(
     "native_bridge_test", CYD / "tests/bridge/test_native_integration.py")
@@ -392,6 +393,85 @@ def main():
         assert witnesses["discovery_retry_panic"]["nonzero"] == 0
         witnesses["discovery_retry_sequences"] = {"mutation": seq, "retry": retry_seq,
                                                  "panic": panic_seq}
+        # Isolate backpressure from firmware lease expiration: both clocks
+        # remain fixed during the modeled slow-reader interval. Capture one
+        # genuine state reply from the actual target, then replay that reply
+        # into the bounded ingress adapter to model a telemetry burst. This
+        # deliberately does not claim measured device/radio throughput.
+        endpoint.advance(1600)
+        native.command("disconnect")
+        native.outgoing.clear()
+        route.connect()
+        state = route.action("connect")
+        assert state["companionReady"] and state["telemetryAvailable"], state
+        route.action("note 60 110")
+        retired_note = next(m for m in reversed(endpoint.sent) if m[6] == 7 and m[15] > 0)
+        witnesses["pressure_strike"] = endpoint.advance(100)
+        assert witnesses["pressure_strike"]["nonzero"] > 128
+        last = endpoint.sent[-1]
+        poll = list(last[:13]) + [0, 247]
+        poll[6] = 3
+        seq = (((last[11] | last[12] << 7) + 1) & 16383) or 1
+        poll[11], poll[12] = seq & 127, seq >> 7
+        route.transmit({"type": "midi", "data": poll})
+        frame = route.read()
+        assert frame["type"] == "midi", frame
+        telemetry = validate_midi_bytes(frame["data"])
+        assert telemetry[6] == 4 and telemetry[7:13] == tuple(poll[7:13]), telemetry
+        assert not endpoint.pending
+        encoded = encode_frame(frame)
+        capacity = MAX_OUTGOING_BYTES // len(encoded)
+        assert capacity > 0
+        retired = route.server.client
+        before = len(endpoint.sent)
+        with patch.object(route.server, "_write", return_value=None):
+            remaining = capacity
+            while remaining:
+                batch = min(remaining, 128)
+                endpoint.pending.extend([telemetry] * batch)
+                route.server.step(0)
+                assert route.server.client is retired
+                assert not endpoint.pending
+                remaining -= batch
+            peak = len(retired.outgoing)
+            assert peak == capacity * len(encoded) <= MAX_OUTGOING_BYTES
+            assert len(endpoint.sent) == before
+            endpoint.pending.append(telemetry)
+            route.server.step(0)
+        assert route.server.client is None and not retired.outgoing
+        assert len(endpoint.sent) == before + 1
+        panic = endpoint.sent[-1]
+        assert panic[6] == 8 and panic[7:11] == tuple(poll[7:11]), panic
+        assert (panic[11] | panic[12] << 7) == (((seq + 1) & 16383) or 1), panic
+        route.await_retired()
+        endpoint.advance(40)
+        witnesses["pressure_panic"] = endpoint.advance(80)
+        assert witnesses["pressure_panic"]["nonzero"] == 0
+        witnesses["pressure_queue"] = {"frame_bytes": len(encoded), "accepted_frames": capacity,
+                                       "peak_bytes": peak, "limit_bytes": MAX_OUTGOING_BYTES,
+                                       "overflow_frames": 1, "retired_queue_bytes": len(retired.outgoing),
+                                       "source": "captured actual target state; modeled blocked writes"}
+        endpoint.advance(1600)
+        native.command("disconnect")
+        native.outgoing.clear()
+        # Inject a retired state reply before authentication. It must not
+        # precede the new hello or be delivered to the new controller.
+        endpoint.pending.append(telemetry)
+        route.connect()
+        state = route.action("connect")
+        assert state["companionReady"] and state["telemetryAvailable"], state
+        fresh = next(m for m in reversed(endpoint.sent) if m[6] == 1)
+        assert fresh[7:11] != retired_note[7:11]
+        route.target_error(list(retired_note), 3)
+        witnesses["pressure_stale_note"] = endpoint.advance(80)
+        assert witnesses["pressure_stale_note"]["nonzero"] == 0
+        route.action("note 62 110")
+        witnesses["pressure_recovery_strike"] = endpoint.advance(100)
+        assert witnesses["pressure_recovery_strike"]["nonzero"] > 128
+        route.action("panic")
+        endpoint.advance(40)
+        witnesses["pressure_recovery_panic"] = endpoint.advance(80)
+        assert witnesses["pressure_recovery_panic"]["nonzero"] == 0
         witnesses["bridge_refusals"] = ["protocol", "token", "preauth MIDI",
                                         "unknown profile", "out-of-range MIDI"]
         report = {"status": "PASS", "route": "shared controller / authenticated localhost TCP / actual emulated USB / actual firmware CPU",
