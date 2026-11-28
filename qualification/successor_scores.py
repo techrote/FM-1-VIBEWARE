@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 
-from ecophon_archive import ECO_SUCCESSOR_FILES, extract
+from ecophon_archive import ECO_ARC_FILES, ECO_SUCCESSOR_FILES, extract
 from verify_replay import verify
 
 
@@ -28,7 +28,8 @@ def compare(fresh, original, names):
 
 
 def main():
-    instrument, source, native, native_digest, score, score_digest = sys.argv[1:]
+    instrument, source, native, native_digest, score, score_digest, *extra = sys.argv[1:]
+    assert extra in ([], ['--live-arc']) and (not extra or instrument == 'ecophon')
     source = Path(source).resolve()
     native = Path(native).resolve()
     core = source/'instruments'/instrument
@@ -45,7 +46,7 @@ def main():
         lib = root/('qa.dll' if windows else 'qa.so')
         receipts = {}
         if instrument == 'ecophon':
-            extract(native, original, native_digest, allowed_nested=ECO_SUCCESSOR_FILES)
+            extract(native, original, native_digest, allowed_nested=ECO_SUCCESSOR_FILES + (ECO_ARC_FILES if extra else ()))
             run(*flags, *libflags, core/'ecophon.c', core/'fixture.c', '-o', lib, cwd=root)
             for generator, target in [('performance.py', 'performances'), ('feedback.py', 'feedback')]:
                 run(sys.executable, core/generator, lib, fresh/target, cwd=root)
