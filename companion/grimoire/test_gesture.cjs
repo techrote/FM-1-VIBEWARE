@@ -110,3 +110,41 @@ function checkExchange(R){
   return cases;
 }
 console.log('Orbit Sketch JSON exchange: '+checkExchange(GestureQueue.Ribbon)+' documents, 16384 matching trajectory blocks PASS');
+
+function checkDirection(R){
+  const assert=(b,m)=>{if(!b)throw Error(m)};
+  let blocks=0;
+  for(const shape of ['ribbon','crown','pendulum','sketch'])for(const speed of [1,2,4]){
+    const r=new R(),control=new R();
+    for(const obj of [r,control]){
+      obj.setSketch([[2,12],[9,23],[34,56],[71,94],[126,10],[91,84],[32,7],[14,72]]);
+      obj.setShape(shape);obj.setSpeed(speed);
+    }
+    let divergent=0;
+    for(let k=0;k<1024;k++){
+      if(k===37||k===702){
+        const before=[r.phase,r.carry,r.x,r.y,r.blend,r.manual];
+        r.setDirection(k===37?-1:1);
+        assert(before.join() === [r.phase,r.carry,r.x,r.y,r.blend,r.manual].join(),'direction must preserve clock and state');
+      }
+      if(k===200){r.take(127,0);control.take(127,0)}
+      if(k===220){r.resume();control.resume()}
+      const phase=r.phase,carry=r.carry,direction=r.direction;
+      const xy=r.block(),other=control.block();
+      const ticks=Math.floor((carry+5)/2);
+      assert(r.phase===(phase+direction*speed*ticks+256)%256&&r.carry===(carry+5)%2,'signed clock/carry');
+      if(k>=200&&k<220)assert(xy===null&&r.x===127&&r.y===0,'reverse manual priority');
+      else {assert(xy.every(v=>Number.isInteger(v)&&v>=0&&v<=127),'reverse bounded XY');if(xy.join()!==other.join())divergent++}
+      if(k<37)assert(xy.join()===other.join(),'pre-reversal trajectory');
+      blocks++;
+    }
+    assert(divergent>128,'direction materially changes trajectory');
+    for(const bad of [0,2,-2,1.5,'-1',NaN,null]){
+      let refused=false;try{r.setDirection(bad)}catch{refused=true}
+      assert(refused&&r.direction===1,'invalid direction atomic');
+    }
+    r.setDirection(-1);r.reset();assert(r.direction===1&&r.phase===0&&r.speed===0&&r.block()===null,'panic restores forward and stops');
+  }
+  return blocks;
+}
+console.log('Orbit direction: '+checkDirection(GestureQueue.Ribbon)+' blocks, signed wrap/carry, held-state continuity, manual ownership and reset PASS');
