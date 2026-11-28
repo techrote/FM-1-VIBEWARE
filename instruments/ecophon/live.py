@@ -28,6 +28,10 @@ class Fixture:
         self.lib.ecof_memory_step.restype = C.c_int
         self.lib.ecof_memory_get.argtypes = [C.c_uint,C.POINTER(C.c_uint8)]
         self.lib.ecof_memory_get.restype = C.c_int
+        self.lib.ecof_arc_start.argtypes = []
+        self.lib.ecof_arc_start.restype = C.c_int
+        self.lib.ecof_arc_step.argtypes = [C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
+        self.lib.ecof_arc_step.restype = C.c_int
         self.gen = 0
         self.active = False
 
@@ -54,7 +58,7 @@ class Fixture:
             spec.update({"fertility":(0,255),"sharing":(0,255),"pressure":(0,255),"frozen":(0,1)})
         elif route in ("/memory/capture","/memory/recall"):
             spec["slot"] = (0,1)
-        elif route not in ("/panic","/memory/step"):
+        elif route not in ("/panic","/memory/step","/arc/start","/arc/step"):
             raise ValueError("unknown command")
         fields(spec)
         if not self.active or d["generation"] != self.gen:
@@ -69,22 +73,33 @@ class Fixture:
                 raise RuntimeError("native memory rejected request")
             return {"generation":self.gen,"slot":d["slot"],"accepted":True,
                     "controls":self.memory_slot(d["slot"])}
+        if route == "/arc/start":
+            if not self.lib.ecof_arc_start():
+                raise RuntimeError("native arc rejected request")
+            return {"generation":self.gen,"accepted":True,"total_blocks":240}
         pcm=(C.c_int16*FRAMES)()
         snap=(C.c_uint32*56)()
-        if route == "/memory/step":
+        arc_block = 0
+        if route == "/arc/step":
+            arc_block = self.lib.ecof_arc_step(pcm,snap)
+            count = 56 if 1 <= arc_block <= 240 else 0
+        elif route == "/memory/step":
             count = self.lib.ecof_memory_step(pcm,snap)
         else:
             count = self.lib.ecof_step(d["fertility"],d["sharing"],d["pressure"],d["frozen"],pcm,snap)
         if count!=56:
             raise RuntimeError("native fixture rejected request")
         v=list(snap)
-        return {"generation":self.gen,"rate":24000,
+        receipt = {"generation":self.gen,"rate":24000,
                 "pcm":base64.b64encode(struct.pack("<2400h",*pcm)).decode("ascii"),
                 "ticks":v[0],"births":v[1],"deaths":v[2],"gifts":v[3],"moves":v[4],"consumed":v[5],
                 "regime":v[6],"frozen":v[7],"muted":v[8],"controls":v[9:12],
                 "resources":v[12:16],
                 "agents":[dict(zip(("alive","patch","species","trait","energy"),v[i:i+5])) for i in range(16,56,5)],
                 "state_source":"local native core (not device telemetry)"}
+        if arc_block:
+            receipt.update(arc_block=arc_block,arc_remaining=240-arc_block)
+        return receipt
 
 class Handler(BaseHTTPRequestHandler):
     def setup(self):

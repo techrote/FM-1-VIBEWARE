@@ -19,7 +19,7 @@
 <button id="cueBase" disabled>Mutualism</button> <button id="cueDrought" disabled>Drought</button> <button id="cueRecovery" disabled>Recovery</button>
 <button id="cueArc" disabled>Play whole Habitat Arc (24 s)</button>
 <p id="cueStatus" role="status">Manual environment.</p>
-<small>Each cue ramps from the current environment over 40 native block requests (four seconds of model audio when completed). The whole Arc blends into Mutualism, transitions to Drought, holds, recovers and sustains. No reset. Manual sliders, XY, freeze, feedback or panic cancel the active performance.</small></fieldset>
+<small>Each cue ramps from the current environment over 40 native block requests (four seconds of model audio when completed). The whole Arc runs on the native audio-block clock: it blends from the last committed environment into Mutualism, transitions to Drought, holds, recovers and sustains. No reset. Manual sliders, XY, freeze, feedback or panic cancel the active performance.</small></fieldset>
 <fieldset><legend>Environment memories — local session</legend>
 <p><button id="storeA" disabled>Capture A</button> <button id="recallA" disabled>Recall A</button> <output id="memoryA">Empty</output></p>
 <p><button id="storeB" disabled>Capture B</button> <button id="recallB" disabled>Recall B</button> <output id="memoryB">Empty</output></p>
@@ -37,13 +37,36 @@
 const $=id=>document.getElementById(id), names=["fertility","sharing","pressure"], outs=["of","os","op"];
 let ctx,gain,generation=0,epoch=0,next=0,timer=0,live=false,starting=false,raf=0;
 const visuals=[];const MAX_VISUALS=8;
-let lastLiving=null,cue=null;
+let lastLiving=null,cue=null,nativeArc=null,lastTick=0,activeRegime=0;
 const CUE_BLOCKS=40, ARC_BLOCKS=240;
 const habitatCues={cueBase:[180,200,40],cueDrought:[0,0,255],cueRecovery:[255,220,0]};
 const memories={A:null,B:null};
 let pendingMemory=null,memoryBusy=false,nativeRecall=null,controlRevision=0,committedFrozen=false;
 function validMemory(values){
  return Array.isArray(values)&&values.length===3&&values.every(v=>Number.isInteger(v)&&v>=0&&v<=255);
+}
+function inRange(v,max){return Number.isInteger(v)&&v>=0&&v<=max}
+function validGeneration(v){return Number.isSafeInteger(v)&&v>0}
+// Validate the whole local native receipt before creating any audio source or
+// publishing ecological state. Every demand-driven render advances ten ticks.
+function checkedRender(d,gen,regime,tick,expected){
+ if(!d||d.generation!==gen||d.rate!==24000||d.regime!==regime||
+    d.ticks!==((tick+10)>>>0)||d.muted!==0||!inRange(d.frozen,1)||
+    d.state_source!=="local native core (not device telemetry)"||
+    !validMemory(d.controls)||
+    !["births","deaths","gifts","moves","consumed"].every(k=>inRange(d[k],0xffffffff))||
+    !Array.isArray(d.resources)||d.resources.length!==4||!d.resources.every(v=>inRange(v,4096))||
+    !Array.isArray(d.agents)||d.agents.length!==8||!d.agents.every(a=>a&&
+       inRange(a.alive,1)&&inRange(a.patch,3)&&inRange(a.species,1)&&
+       inRange(a.trait,15)&&inRange(a.energy,4096)))
+   throw Error("bad ecological receipt");
+ if(expected&&![...d.controls,d.frozen].every((v,i)=>v===expected[i]))
+   throw Error("bad control echo");
+ if(typeof d.pcm!=="string"||d.pcm.length!==6400||!/^[A-Za-z0-9+/]+$/.test(d.pcm))
+   throw Error("bad PCM encoding");
+ const raw=atob(d.pcm);
+ if(raw.length!==4800)throw Error("bad PCM dimensions");
+ return raw;
 }
 function displayMemory(slot,values){
  if(values!==null&&!validMemory(values))throw Error("bad memory receipt");
@@ -88,27 +111,18 @@ function cueControls(from,to,block){
  if(!Number.isInteger(block)||block<1||block>CUE_BLOCKS)throw Error("invalid cue block");
  return from.map((v,i)=>Math.floor((v*(CUE_BLOCKS-block)+to[i]*block)/CUE_BLOCKS));
 }
-function arcControls(from,block){
- if(!Number.isInteger(block)||block<1||block>ARC_BLOCKS)throw Error("invalid arc block");
- const {cueBase:base,cueDrought:drought,cueRecovery:recovery}=habitatCues;
- if(block<=40)return cueControls(from,base,block);
- if(block<=80)return cueControls(base,drought,block-40);
- if(block<=120)return [...drought];
- if(block<=160)return cueControls(drought,recovery,block-120);
- return [...recovery];
-}
 function arcSegment(block){
  return block<=40?"Mutualism":block<=80?"Drought transition":block<=120?"Drought hold":block<=160?"Recovery transition":"Recovery hold";
 }
 function cancelCue(){
- cue=null;nativeRecall=null;++controlRevision;
+ cue=null;nativeRecall=null;nativeArc=null;++controlRevision;
  if(pendingMemory?.kind==="recall")pendingMemory=null;
  $("cueStatus").textContent="Manual environment.";
 }
 function startArc(){
  if(!live||$("frozen").checked)return;
  manualOverride();
- cue={id:"cueArc",from:names.map(n=>+$(n).value),block:0};
+ nativeArc={started:false,block:0};
  $("cueStatus").textContent="Habitat Arc · 0/"+ARC_BLOCKS;
 }
 $("cueArc").onclick=startArc;
@@ -141,13 +155,11 @@ function stepControls(){
  const manual=[...names.map(n=>+$(n).value),+ $("frozen").checked];
  if(cue&&!manual[3]){
   const active=cue;
-  const isArc=active.id==="cueArc", total=isArc?ARC_BLOCKS:CUE_BLOCKS;
   ++active.block;
-  const result=[...(isArc?arcControls(active.from,active.block):cueControls(active.from,active.to,active.block)),0];
+  const result=[...cueControls(active.from,active.to,active.block),0];
   sliders(result);
-  const label=isArc?"Habitat Arc · "+arcSegment(active.block):$(active.id).textContent;
-  $("cueStatus").textContent=label+" · "+active.block+"/"+total+(active.block===total?" complete":"");
-  if(active.block===total)cue=null;
+  $("cueStatus").textContent=$(active.id).textContent+" · "+active.block+"/"+CUE_BLOCKS+(active.block===CUE_BLOCKS?" complete":"");
+  if(active.block===CUE_BLOCKS)cue=null;
   return result;
  }
  if(!$("feedback").checked||manual[3]||lastLiving===null)return manual;
@@ -194,33 +206,59 @@ async function pump(e){
  try{
   await serviceMemory(e);
   if(!live||e!==epoch)return;
+  // Whole-score playback is owned by the native block clock. If the last
+  // completed block was frozen, commit the unfreeze through /step first.
+  let arc=nativeArc;
+  if(arc&&!arc.started&&!committedFrozen){
+   const started=await post("/arc/start",{generation});
+   if(!live||e!==epoch)return;
+   if(started.generation!==generation||started.accepted!==true||started.total_blocks!==ARC_BLOCKS)throw Error("bad Arc start receipt");
+   arc.started=true;
+  }
+  // A manual action or recall may have superseded the pending start.
+  if(arc!==nativeArc||!arc?.started)arc=null;
   const recall=nativeRecall;
-  let d;
+  let d,expected=null;
   if(recall){
    d=await post("/memory/step",{generation});
+   if(!live||e!==epoch)return;
+   if(d.frozen!==0)throw Error("bad recall block receipt");
+  }else if(arc){
+   d=await post("/arc/step",{generation});
+   if(!live||e!==epoch)return;
+   if(d.arc_block!==arc.block+1||d.arc_remaining!==ARC_BLOCKS-d.arc_block||!validMemory(d.controls)||d.frozen!==0)throw Error("bad Arc block receipt");
   }else{
-   const [fertility,sharing,pressure,frozen]=stepControls();
+   expected=stepControls();
+   const [fertility,sharing,pressure,frozen]=expected;
    d=await post("/step",{generation,fertility,sharing,pressure,frozen});
   }
   if(!live||e!==epoch)return;
-  const raw=atob(d.pcm);if(raw.length!==4800||d.rate!==24000||d.generation!==generation)throw Error("bad audio block");
+  const raw=checkedRender(d,generation,activeRegime,lastTick,expected);
   const b=ctx.createBuffer(1,2400,24000),a=b.getChannelData(0);
   for(let i=0;i<a.length;i++){let v=raw.charCodeAt(i*2)|(raw.charCodeAt(i*2+1)<<8);a[i]=(v>=32768?v-65536:v)/32768}
   const src=ctx.createBufferSource();src.buffer=b;src.connect(gain);
   next=Math.max(next,ctx.currentTime+0.015);src.start(next);next+=b.duration;
-  committedFrozen=!!d.frozen;
+  lastTick=d.ticks;committedFrozen=!!d.frozen;
   if(recall&&nativeRecall===recall){
    sliders([...d.controls,d.frozen]);
    ++recall.block;
    $("cueStatus").textContent="Recall "+recall.slot+" · "+recall.block+"/"+CUE_BLOCKS+(recall.block===CUE_BLOCKS?" complete":"");
    if(recall.block===CUE_BLOCKS)nativeRecall=null;
   }
+  // Late native responses can contain valid audio but must not overwrite
+  // more recent manual intent or the status of a replacement score.
+  if(arc&&nativeArc===arc){
+   sliders([...d.controls,d.frozen]);
+   arc.block=d.arc_block;
+   $("cueStatus").textContent="Habitat Arc · "+arcSegment(arc.block)+" · "+arc.block+"/"+ARC_BLOCKS+(arc.block===ARC_BLOCKS?" complete":"");
+   if(arc.block===ARC_BLOCKS)nativeArc=null;
+  }
   lastLiving=d.agents.reduce((n,a)=>n+(a.alive?1:0),0);feedbackStatus();
   delete d.pcm;visuals.push({at:next,state:d});timer=setTimeout(()=>pump(e),5);
  }catch(err){if(e===epoch){stop();$("status").textContent="Stopped: "+err.message}}
 }
 function stop(){
- ++epoch;live=false;lastLiving=null;pendingMemory=null;memoryBusy=false;committedFrozen=false;manualOverride();clearTimeout(timer);cancelAnimationFrame(raf);visuals.length=0;$("stats").textContent="";for(const key of ["ticks","pressure","fertility","regime"])delete $("stats").dataset[key];$("habitat").getContext("2d").clearRect(0,0,640,360);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
+ ++epoch;live=false;lastLiving=null;lastTick=0;pendingMemory=null;memoryBusy=false;committedFrozen=false;manualOverride();clearTimeout(timer);cancelAnimationFrame(raf);visuals.length=0;$("stats").textContent="";for(const key of ["ticks","pressure","fertility","regime"])delete $("stats").dataset[key];$("habitat").getContext("2d").clearRect(0,0,640,360);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
  const old=generation;generation=0;if(old)post("/panic",{generation:old}).catch(()=>{});
  $("status").textContent="Stopped / locally muted.";
 }
@@ -233,9 +271,12 @@ $("start").onclick=async()=>{
   const seed=+$("seed").value,preset=$("preset").selectedIndex;
   if(!Number.isInteger(seed)||seed<0||seed>4294967295)throw Error("invalid seed");
   const d=await post("/reset",{seed,preset});
-  if(e!==epoch){post("/panic",{generation:d.generation}).catch(()=>{});return}
-  generation=d.generation;sliders(d.controls);committedFrozen=!!d.controls[3];
-  if(!Array.isArray(d.memory_slots)||d.memory_slots.length!==2)throw Error("bad memory slots");
+  if(e!==epoch){if(validGeneration(d?.generation))post("/panic",{generation:d.generation}).catch(()=>{});return}
+  if(!validGeneration(d?.generation))throw Error("bad reset generation");
+  generation=d.generation;
+  if(!Array.isArray(d.controls)||d.controls.length!==4||!d.controls.every((v,i)=>v===presets[preset][i])||
+     !Array.isArray(d.memory_slots)||d.memory_slots.length!==2||!d.memory_slots.every(v=>v===null||validMemory(v)))throw Error("bad reset receipt");
+  activeRegime=preset%3;lastTick=0;sliders(d.controls);committedFrozen=!!d.controls[3];
   ["A","B"].forEach((slot,i)=>displayMemory(slot,d.memory_slots[i]));
   gain=ctx.createGain();gain.gain.value=0.55;gain.connect(ctx.destination);
   live=true;feedbackStatus();next=ctx.currentTime+0.04;$("status").textContent="Playing native ecological model.";animate(e);pump(e);
