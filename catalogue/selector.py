@@ -26,6 +26,8 @@ ECO_PAYLOADS=frozenset((
     "feedback/population-steady.json", "feedback/population-summary.json",
 ))
 
+ECO_LIVE_ARC = frozenset(f'live-arc/{p}-{a}.wav' for p in range(3) for a in ('arc','steady','takeover')) | {'live-arc/live-arc-replay.json'}
+
 def catalogue():
     d=json.loads(Path(__file__).with_name("native-packages.json").read_text(encoding="utf-8"))
     if d["schema"]!=1 or d["kind"]!="native-host-only":
@@ -44,6 +46,10 @@ def verified_extract(archive,dest,p):
             raise ValueError("Expanded archive exceeds bounds")
         seen=set()
         allowed_nested=ECO_PAYLOADS if p["id"]=="ecophon" else frozenset()
+        if p.get("ecophon_live_arc", False):
+            if p["id"]!="ecophon" or p["ecophon_live_arc"] is not True:
+                raise ValueError("Invalid Ecophon live-arc inventory flag")
+            allowed_nested=allowed_nested | ECO_LIVE_ARC
         found_nested=set()
         for i in infos:
             name=i.filename
