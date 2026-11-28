@@ -43,3 +43,12 @@ int ecof_memory_step(int16_t *pcm,uint32_t *snap) {
     EcoEnvironment env=eco_memory_next(&memory);
     return render_step(env.f,env.s,env.p,memory.frozen,pcm,snap);
 }
+
+/* Read-only local capture receipt; never advances the model. */
+int ecof_memory_get(unsigned slot, uint8_t *out) {
+    if(slot>=2 || !out || !(memory.valid & (1u<<slot))) return 0;
+    out[0]=memory.slots[slot].f;
+    out[1]=memory.slots[slot].s;
+    out[2]=memory.slots[slot].p;
+    return 1;
+}
