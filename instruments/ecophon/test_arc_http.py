@@ -42,6 +42,8 @@ with make_server(sys.argv[1],0) as server:
     comparisons=sounding=0
     digest=hashlib.sha256()
     try:
+        # Establish a genuinely issued, positive stale generation for the first arm.
+        reset(0,42)
         for preset in range(3):
             for seed in (42,991):
                 for cut in (240,73):
@@ -54,7 +56,9 @@ with make_server(sys.argv[1],0) as server:
                     assert arc(g,"start")["total_blocks"]==240
                     for n in range(1,cut+1):
                         if n==11:
+                            arc(0,"step",400)
                             arc(g-1,"step",409)
+                            arc(g+1,"step",409)
                             arc(g,"step",400,extra=1)
                             post("/memory/step",dict(generation=g),409)
                             stored=post("/memory/capture",dict(generation=g,slot=0))
@@ -86,6 +90,42 @@ with make_server(sys.argv[1],0) as server:
                         comparisons+=1
                     arc(g,"start",409)
         assert comparisons==1896 and sounding>0,(comparisons,sounding)
+        # A successful recall interrupts the Arc, but a malformed recall does not.
+        target,origin=(240,12,80),(117,202,93)
+        g=reset(1,77)
+        got=[direct(g,target)]
+        post("/memory/capture",dict(generation=g,slot=1))
+        got.append(direct(g,origin))
+        expected=[target,origin]
+        arc(g,"start")
+        for n in range(1,6):
+            if n==3:
+                post("/memory/recall",dict(generation=g,slot=2),400)
+            d=arc(g,"step")
+            assert d["arc_block"]==n
+            got.append(d)
+            expected.append(schedule(origin,n))
+        post("/memory/recall",dict(generation=g,slot=1))
+        arc(g,"step",409)
+        recall_origin=expected[-1]
+        for n in range(1,41):
+            if n==7:
+                post("/memory/capture",dict(generation=g,slot=1))
+            got.append(post("/memory/step",dict(generation=g)))
+            expected.append(mix(recall_origin,target,n))
+        # Reset while armed must invalidate both the old and new cursor.
+        arc(g,"start")
+        h=reset(1,77)
+        arc(g,"step",409)
+        arc(h,"step",409)
+        for d,v in zip(got,expected):
+            assert comparable(d)==comparable(direct(h,v)),("recall",d["ticks"])
+            raw=base64.b64decode(d["pcm"],validate=True)
+            assert len(raw)==4800
+            digest.update(raw)
+            sounding+=any(raw)
+            comparisons+=1
+        assert comparisons==1943 and sounding>0,(comparisons,sounding)
         print("PASS actual HTTP/native Arc",comparisons,"exact PCM/state blocks,",sounding,"sounding; SHA256",digest.hexdigest())
     finally:
         server.shutdown()
