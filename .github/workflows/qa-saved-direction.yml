@@ -1,0 +1,98 @@
+name: QA independent saved score and signed orbit replay
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qa-saved-direction.yml'
+      - 'qualification/verify_saved_direction.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  replay:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - instrument: chronomorph
+            os: ubuntu-24.04
+            pin: 85ac632f967154109632f8db64a30e4b79f77fb8
+            artifact: 15247703179
+            digest: bd5c371d912b55c4ea2d1578d41279f9fe595aa277b6c00959f2236044e4d9c3
+          - instrument: chronomorph
+            os: windows-latest
+            pin: 85ac632f967154109632f8db64a30e4b79f77fb8
+            artifact: 15248042366
+            digest: 122ed17642a39992dfe3d52d6605d8f9ba6cfb3260e89c779cc02bbe9d994897
+          - instrument: grimoire
+            os: ubuntu-24.04
+            pin: 55eb1bc8f4c99268dc4102fd03f9685bde932fd9
+            artifact: 15248319994
+            digest: e0f74da02ca8745f704be26f31cd4454b1c05c489bd3610052e1d035a912103b
+          - instrument: grimoire
+            os: windows-latest
+            pin: 55eb1bc8f4c99268dc4102fd03f9685bde932fd9
+            artifact: 15248379792
+            digest: aaf7e69b0a611bc1cc294c3706ba83b4388f561fd1f0cc6d5fdaea7a5d8a9e97
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.pin }}
+          path: frozen
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rebuild source and compare original hosted replay to independent model
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIN: ${{ matrix.pin }}
+          INSTRUMENT: ${{ matrix.instrument }}
+          ARTIFACT: ${{ matrix.artifact }}
+          DIGEST: ${{ matrix.digest }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen rev-parse HEAD)" = "$PIN"
+          mkdir -p 'original replay' 'fresh replay' receipts
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > replay.zip
+          python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract; extract(Path('replay.zip'), Path('original replay'), sys.argv[1])" "$DIGEST"
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          if [ "$INSTRUMENT" = chronomorph ]; then
+            c=frozen/instruments/chronomorph
+            cmp 'original replay/scene_score.py' "$c/scene_score.py"
+            gcc "${flags[@]}" "$c/chrono.c" "$c/live_bridge.c" -o 'fresh replay/core.dll'
+            python "$c/scene_score.py" 'fresh replay/core.dll' 'fresh replay' --self-test
+            printf '%s\n' "$PIN" > 'fresh replay/source-revision.txt'
+          else
+            c=frozen/companion/grimoire
+            cmp 'original replay/direction_replay.py' "$c/direction_replay.py"
+            gcc "${flags[@]}" frozen/instruments/grimoire/orbit.c "$c/session.c" -o 'fresh replay/core.dll'
+            python "$c/direction_replay.py" 'fresh replay/core.dll' 'fresh replay' --revision "$PIN"
+          fi
+          python qualification/verify_saved_direction.py "$INSTRUMENT" 'original replay' "$PIN" > receipts/original.json
+          python qualification/verify_saved_direction.py "$INSTRUMENT" 'fresh replay' "$PIN" > receipts/fresh.json
+          cmp receipts/original.json receipts/fresh.json
+          python -c "import sys; from pathlib import Path; a=Path('original replay'); b=Path('fresh replay'); names=['scene-bank.json','saved-score.json','fixed-pattern-control.json','receipt.json'] if sys.argv[1]=='chronomorph' else ['direction-replay.json']; files=sorted(p.name for p in a.glob('*.wav')); assert len(files)==(2 if sys.argv[1]=='chronomorph' else 6); assert all((a/n).read_bytes()==(b/n).read_bytes() for n in files+names)" "$INSTRUMENT"
+          printf '%s\n' "$PIN" > receipts/source.txt
+          printf '%s %s\n' "$ARTIFACT" "$DIGEST" > receipts/original-artifact.txt
+          gcc --version > receipts/compiler.txt
+          cat receipts/fresh.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-saved-direction-${{ matrix.instrument }}-${{ matrix.os }}
+          path: receipts/
+          if-no-files-found: error
