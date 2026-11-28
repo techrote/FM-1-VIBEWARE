@@ -34,6 +34,11 @@ async function post(path,q){
     return await Promise.race([request,deadline]);
   }finally{clearTimeout(timer);}
 }
+function validateAudioReceipt(r,hasPatch){
+  if(!r||typeof r.pcm!=='string'||r.pcm.length!==3200||!/^[A-Za-z0-9+/]+$/.test(r.pcm))throw Error('PCM format');
+  if(!Array.isArray(r.levels)||r.levels.length!==6||r.levels.some(n=>!Number.isInteger(n)||n<0||n>131070))throw Error('Modal receipt');
+  if(hasPatch&&!validPatch(r.patch))throw Error('Material readback');
+}
 function paint(levels){bars.forEach((b,i)=>b.style.height=Math.min(100,100*Math.sqrt(levels[i]/131070))+'%');}
 function stop(reason='Stopped'){
   epoch++; active=false;pointer=null;heldKey=null;events=[];memoryJobs=[];visuals=[];refreshMorph();for(const s of sources){try{s.stop();}catch{}}sources.clear();paint([0,0,0,0,0,0]);
@@ -67,8 +72,9 @@ async function pump(g){try{while(active&&epoch===g){
     if(userKeys.every(k=>current?.[k]===job.args[k])&&$(id).textContent.startsWith('Store pending'))$(id).textContent='Native slot ready — apply explicitly';
     continue;
   }
+  // Validate all render receipts before changing UI or scheduling audio, even when a newer manual edit superseded readback.
+  validateAudioReceipt(r,Boolean(job));
   if(job&&job.revision===controlRevision){
-    if(!validPatch(r.patch))throw Error('Material readback');
     for(const k of userKeys)$(k).value=r.patch[k];patchPicker.value='';dot();
     if(job.args.op==='recall')$('user-status').textContent='User material recalled';
     else $('morph-status').textContent='Native morph '+job.args.position+'/127 — manual edits may supersede';
