@@ -1,0 +1,184 @@
+{
+  "instrument_id": "grimoire.orbit-gate",
+  "profile_version": 1,
+  "engine_rate_hz": 24000,
+  "scope": "provisional instrument-local semantic fixture; not a device wire contract",
+  "standalone": {
+    "core": "Orbit",
+    "required_companion": false,
+    "target_status": "Linux virtual-target PASS; independent QA rerun PASS; physical HOLD",
+    "virtual_evidence": {
+      "platform_revision": "4133787e51010581c9ed594db7e57b9506894c84",
+      "author_run": "https://github.com/techrote/FM-1-VIBEWARE/actions/runs/46039864752",
+      "independent_run": "https://github.com/techrote/FM-1-VIBEWARE/actions/runs/46045927224",
+      "panel": {
+        "note_keys": "pitch",
+        "K1": "material_y",
+        "SEL": "material preset",
+        "PLAY": "gate toggle",
+        "HOME": "panic"
+      },
+      "scope": "standalone FM-1 emulation only; not companion transport"
+    }
+  },
+  "companion": {
+    "intended_tier": "enhanced where verified; basic MIDI fallback",
+    "verified_tier": "local native core fixture only",
+    "physical_transport": "unknown",
+    "midi_mapping": "proposed only; not verified",
+    "state_source": "local native core, not device telemetry"
+  },
+  "parameters": [
+    {
+      "id": "pitch_x",
+      "type": "integer",
+      "min": 0,
+      "max": 127,
+      "default": 48,
+      "access": "read_write",
+      "unit": "gesture coordinate",
+      "mapping": "floor(x * 23 / 127), 24 chromatic pitches"
+    },
+    {
+      "id": "material_y",
+      "type": "integer",
+      "min": 0,
+      "max": 127,
+      "default": 70,
+      "access": "read_write",
+      "unit": "gesture coordinate",
+      "mapping": "phase perturbation and low-pass coefficient"
+    },
+    {
+      "id": "material",
+      "type": "enum",
+      "values": [
+        "Amber",
+        "Iron",
+        "Abyss"
+      ],
+      "default": 0,
+      "access": "read_write",
+      "on_change": "reset core and release gate"
+    }
+  ],
+  "events": [
+    {
+      "id": "gesture_xy",
+      "parameters": [
+        "pitch_x",
+        "material_y"
+      ]
+    },
+    {
+      "id": "gate",
+      "values": [
+        0,
+        1
+      ],
+      "release_required": true
+    },
+    {
+      "id": "panic",
+      "effect": "immediate mute"
+    }
+  ],
+  "telemetry": [
+    {
+      "id": "phase",
+      "type": "uint16[3]",
+      "source": "local native core"
+    },
+    {
+      "id": "energy",
+      "type": "integer",
+      "source": "local native core"
+    },
+    {
+      "id": "env",
+      "type": "integer",
+      "source": "local native core"
+    },
+    {
+      "id": "gate",
+      "type": "boolean",
+      "source": "local native core"
+    }
+  ],
+  "unsupported": [
+    "device discovery",
+    "device telemetry",
+    "verified MIDI",
+    "verified BLE/Wi-Fi/serial",
+    "clock/transport"
+  ],
+  "fixture": {
+    "max_pending_events": 16,
+    "idle_lease_seconds": 1.5,
+    "overflow": "discard pending events and panic",
+    "sketch_exchange": {
+      "format": "grimoire.orbit-sketch",
+      "version": 1,
+      "max_text_characters": 512,
+      "points": 8,
+      "coordinate_range": [
+        0,
+        127
+      ],
+      "scope": "local authoring document only; import to draft, explicit Apply; no gate, speed or session state"
+    },
+    "played_orbit": {
+      "scope": "local controller metadata, detached at native audio block submission; not device telemetry",
+      "path_points": 8,
+      "max_pending_snapshots": 8,
+      "fields": [
+        "shape",
+        "speed",
+        "direction (+1 forward, -1 reverse)",
+        "phase (next reference tick)",
+        "manual",
+        "path"
+      ],
+      "reset": "off on panic/disconnect; queued metadata invalidated with audio"
+    },
+    "orbit_direction": {
+      "scope": "local gesture clock; not a device event or wire field",
+      "values": [
+        1,
+        -1
+      ],
+      "default": 1,
+      "transition": "preserves phase, carry, current XY, manual state and blend; subsequent ticks advance signed direction",
+      "reset": "forward and automation off on panic/disconnect"
+    },
+    "native_ribbon_endpoint": {
+      "scope": "local native audition API only; not device telemetry or a wire contract",
+      "version": 1,
+      "request_kind": "ribbon",
+      "actions": {
+        "shape": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "speed": [
+          1,
+          2,
+          4
+        ],
+        "direction": [
+          1,
+          -1
+        ],
+        "sketch": "eight integer XY pairs in 0..127",
+        "resume": "manual takeover ends with eight-tick blend",
+        "stop": "automation off, current XY and gate retained",
+        "state": "read-only, does not renew session lease"
+      },
+      "audio": "1200 frame block includes native controller snapshot; automation off by default",
+      "lifecycle": "XY while active takes manual ownership; preset and panic stop automation; reconnect or expiry clears native sketch and automation; invalid requests do not renew lease",
+      "browser": "legacy browser clock remains in use until separately migrated"
+    }
+  }
+}

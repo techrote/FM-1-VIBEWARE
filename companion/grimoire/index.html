@@ -1,0 +1,131 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Grimoire · Orbit Gate</title>
+<style>body{background:#131321;color:#e4d9be;font:16px system-ui;max-width:540px;margin:24px auto;padding:12px}canvas{width:100%;max-width:480px;touch-action:none;border:1px solid #9b8060}button{margin:5px;padding:10px;background:#302938;color:inherit;border:1px solid #9b8060}button:disabled{opacity:.4}</style>
+<h1>Orbit Gate</h1><p>Grimoire / native-core virtual companion. Drag to sound; X selects pitch, Y bends the satellites and opens the filter.</p><button id="start">Start audio / connect</button><button id="panic">Panic</button><div id="presets"><button data-p="0">Amber</button><button data-p="1">Iron</button><button data-p="2">Abyss</button></div><div id="ribbonControls"><label for="ribbonSpeed">Orbit Ribbon (native local controller)</label> <select id="ribbonSpeed"><option value="0">Off</option><option value="1">Slow</option><option value="2">Medium</option><option value="4">Fast</option></select> <label for="ribbonDirection">Direction</label> <select id="ribbonDirection" disabled><option value="1">Forward</option><option value="-1">Reverse</option></select><button id="holdGate" disabled aria-pressed="false">Hold gate</button><small>Explicit gate; drag to override, release to resume.</small></div><canvas id="pad" width="320" height="240"></canvas><div><label for="ribbonShape">Ribbon trajectory</label> <select id="ribbonShape" disabled><option value="ribbon">Ribbon</option><option value="crown">Crown · bright arc</option><option value="pendulum">Pendulum · dark sweep</option><option value="sketch" id="sketchOption" disabled>My sketch</option></select></div><details id="sketchEditor"><summary>Draw your own orbit (local sketch)</summary><p>Tap eight points in order. Apply replaces the saved sketch; it never starts a gate. Undo or clear changes only the draft.</p><canvas id="sketchPad" width="320" height="240" aria-label="Eight-point trajectory editor"></canvas><div><button id="sketchUndo" disabled>Undo point</button><button id="sketchClear" disabled>Clear draft</button><button id="sketchApply" disabled>Apply sketch</button></div><p id="sketchStatus" aria-live="polite">0 / 8 points</p><label for="sketchExchange">Sketch JSON (local interchange, no gate or speed)</label><textarea id="sketchExchange" maxlength="512" rows="4" style="width:100%;box-sizing:border-box"></textarea><div><button id="sketchExport" disabled>Export saved sketch</button><button id="sketchImport">Import to draft</button></div><p id="sketchExchangeStatus" aria-live="polite"></p></details><p id="orbitPlayed" aria-live="off">Played local orbit: off</p><p id="state">Disconnected</p>
+<script src="/gesture.js"></script>
+<script>
+const pad=document.querySelector('#pad'),ctx=pad.getContext('2d'),status=document.querySelector('#state'),start=document.querySelector('#start');
+let audio=null,bus=null,g=0,next=0,epoch=0,timer=null,pointer=null,connecting=false,inFlight=null;
+const queue=new GestureQueue(),sources=new Set(),visuals=[];
+const ribbon=new GestureQueue.Ribbon(),speedControl=document.querySelector('#ribbonSpeed'),holdControl=document.querySelector('#holdGate'),shapeControl=document.querySelector('#ribbonShape'),directionControl=document.querySelector('#ribbonDirection');
+let held=false,nativeSketch=null;
+const orbitPlayed=document.querySelector("#orbitPlayed");
+// Native local receipt, not device telemetry. Never advance a browser clock.
+const shapeNames=['ribbon','crown','pendulum','sketch'];
+function captureOrbit(d){
+  const s=d.ribbon,valid=(v,max)=>Number.isInteger(v)&&v>=0&&v<=max;
+  if(d.state_source!=='local native core'||!s||!valid(s.shape,3)||![0,1,2,4].includes(s.speed)||
+     ![1,-1].includes(s.direction)||!valid(s.phase,255)||!valid(s.carry,1)||
+     !valid(s.manual,1)||!valid(s.blend,8)||!valid(s.x,127)||!valid(s.y,127)||
+     !valid(s.has_sketch,1))throw Error('invalid native ribbon receipt');
+  if(s.shape===3&&(!nativeSketch||!s.has_sketch))throw Error('missing native sketch');
+  const shape=shapeNames[s.shape],path=shape==='sketch'?nativeSketch:GestureQueue.Ribbon.shapes[shape];
+  return s.speed?{shape,speed:s.speed,direction:s.direction,phase:s.phase,manual:!!s.manual,path:path.map(p=>[...p])}:null;
+}
+function ribbonCommand(action,data={}){
+  if(!g||connecting)return false;
+  if(!queue.push(5,{action,...data})){pointer=null;cancelAudio();status.textContent='Gesture overload: panic queued';pump();return false}
+  pump();return true;
+}
+function selectNativeShape(shape){
+  if(shape==='sketch'&&!ribbonCommand('sketch',{points:ribbon.sketch.map(p=>[...p])}))return;
+  ribbonCommand('shape',{value:shapeNames.indexOf(shape)});
+}
+const sketchPad=document.querySelector('#sketchPad'),sketchCtx=sketchPad.getContext('2d'),sketchStatus=document.querySelector('#sketchStatus'),sketchApply=document.querySelector('#sketchApply'),sketchUndo=document.querySelector('#sketchUndo'),sketchClear=document.querySelector('#sketchClear'),sketchOption=document.querySelector('#sketchOption');
+const draft=[];
+const sketchExchange=document.querySelector('#sketchExchange'),sketchExport=document.querySelector('#sketchExport'),sketchImport=document.querySelector('#sketchImport'),exchangeStatus=document.querySelector('#sketchExchangeStatus');
+sketchExport.onclick=()=>{
+  if(!ribbon.sketch)return;
+  sketchExchange.value=GestureQueue.Ribbon.encodeSketch(ribbon.sketch);
+  exchangeStatus.textContent='Saved sketch JSON ready to copy';
+};
+sketchImport.onclick=()=>{
+  try{
+    const points=GestureQueue.Ribbon.decodeSketch(sketchExchange.value);
+    draft.splice(0,draft.length,...points.map(p=>[...p]));
+    showSketch();
+    exchangeStatus.textContent='Imported to draft only; Apply explicitly to use';
+  }catch(err){exchangeStatus.textContent='Invalid sketch JSON; current draft and saved sketch unchanged'}
+};
+function showSketch(){
+  sketchOption.disabled=sketchExport.disabled=!ribbon.sketch;
+  sketchApply.disabled=draft.length!==8;sketchUndo.disabled=sketchClear.disabled=!draft.length;
+  sketchStatus.textContent=draft.length+' / 8 points'+(ribbon.sketch?' · saved sketch available':'');
+  sketchCtx.fillStyle='#171321';sketchCtx.fillRect(0,0,320,240);
+  function trace(points,color,closed){
+    if(!points.length)return;
+    sketchCtx.strokeStyle=color;sketchCtx.beginPath();
+    points.forEach(([x,y],i)=>{const px=x*319/127,py=(127-y)*239/127;if(i)sketchCtx.lineTo(px,py);else sketchCtx.moveTo(px,py)});
+    if(closed)sketchCtx.closePath();sketchCtx.stroke();
+    sketchCtx.fillStyle=color;
+    points.forEach(([x,y])=>{sketchCtx.beginPath();sketchCtx.arc(x*319/127,(127-y)*239/127,4,0,Math.PI*2);sketchCtx.fill()});
+  }
+  if(ribbon.sketch)trace(ribbon.sketch,'#81738a',true);
+  trace(draft,'#ffc67a',draft.length===8);
+}
+function addSketchPoint(x,y){
+  if(draft.length>=8||![x,y].every(v=>Number.isInteger(v)&&v>=0&&v<=127))return false;
+  draft.push([x,y]);showSketch();return true;
+}
+sketchPad.onpointerdown=e=>{
+  const r=sketchPad.getBoundingClientRect();
+  if(r.width<=0||r.height<=0)return;
+  addSketchPoint(Math.max(0,Math.min(127,Math.round((e.clientX-r.left)/r.width*127))),Math.max(0,Math.min(127,Math.round((1-(e.clientY-r.top)/r.height)*127))));
+};
+sketchUndo.onclick=()=>{draft.pop();showSketch()};
+sketchClear.onclick=()=>{draft.length=0;showSketch()};
+sketchApply.onclick=()=>{
+  if(draft.length!==8||pointer!==null||connecting)return;
+  ribbon.setSketch(draft);draft.length=0;
+  if(g){ribbon.setShape('sketch');selectNativeShape('sketch')}
+  showSketch();showRibbon();
+};
+function showRibbon(){shapeControl.value=ribbon.shape;shapeControl.disabled=!g;speedControl.value=String(ribbon.speed);directionControl.value=String(ribbon.direction);directionControl.disabled=!g;holdControl.disabled=!g||!ribbon.speed;holdControl.textContent=held?'Release gate':'Hold gate';holdControl.setAttribute('aria-pressed',String(held))}
+function clearRibbon(){ribbon.reset();held=false;showRibbon()}
+speedControl.onchange=()=>{if(!g||connecting||pointer!==null){showRibbon();return}const speed=Number(speedControl.value);if(!speed){stop();return}ribbon.setSpeed(speed);ribbonCommand('speed',{value:speed});showRibbon()};
+shapeControl.onchange=()=>{if(!g||connecting||pointer!==null){showRibbon();return}ribbon.setShape(shapeControl.value);selectNativeShape(ribbon.shape);showRibbon()};
+directionControl.onchange=()=>{if(!g||connecting||pointer!==null){showRibbon();return}ribbon.setDirection(Number(directionControl.value));ribbonCommand('direction',{value:ribbon.direction});showRibbon()};
+holdControl.onclick=()=>{if(!g||connecting||!ribbon.speed||pointer!==null)return;held=!held;showRibbon();event(2,held?1:0)};
+// Native snapshots describe the END of each PCM block. Display only when that block has played.
+function visualFrame(){if(audio){let d=null;while(visuals.length&&visuals[0].at<=audio.currentTime)d=visuals.shift().state;if(d)draw(d)}requestAnimationFrame(visualFrame)}
+requestAnimationFrame(visualFrame);
+async function request(kind,data={},generation=g){
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),900);
+  try{const r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,generation,...data}),signal:controller.signal});
+    if(!r.ok)throw Error('session rejected');return await r.json();
+  }finally{clearTimeout(timeout)}
+}
+function cancelAudio(){clearRibbon();epoch++;for(const s of sources){try{s.stop()}catch{}}sources.clear();visuals.length=0;ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);orbitPlayed.textContent='Played local orbit: off';status.textContent='Local audio muted';next=audio?audio.currentTime:0}
+function stop(){pointer=null;cancelAudio();if(g){queue.panic();pump()}}
+function event(op,a=0,b=0){if(!g||connecting)return;if(!queue.push(op,a,b)){pointer=null;cancelAudio();status.textContent='Gesture overload: panic queued'}pump()}
+function draw(d){ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);const colors=['#ffc67a','#8ecfc7','#a58bd6'];d.phase.forEach((v,i)=>{const a=v/65536*2*Math.PI,r=38+i*25;ctx.strokeStyle=colors[i];ctx.beginPath();ctx.arc(160,120,r,0,Math.PI*2);ctx.stroke();ctx.fillStyle=colors[i];ctx.beginPath();ctx.arc(160+Math.cos(a)*r,120+Math.sin(a)*r,3+d.energy/5000,0,Math.PI*2);ctx.fill()});const orbit=d.localOrbit;orbitPlayed.textContent=orbit?'Played local orbit: '+orbit.shape+' · '+(orbit.manual?'manual override':'automation')+' · speed '+orbit.speed+' · '+(orbit.direction===-1?'reverse':'forward')+' · next clock '+orbit.phase+'/256':'Played local orbit: off';if(orbit){ctx.strokeStyle='#ffc67a60';ctx.beginPath();orbit.path.forEach(([px,py],i)=>{const x=px/127*319,y=(127-py)/127*239;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)});ctx.closePath();ctx.stroke()}const x=d.x/127*319,y=(127-d.y)/127*239;ctx.strokeStyle='#ffffff50';ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,240);ctx.moveTo(0,y);ctx.lineTo(320,y);ctx.stroke();ctx.strokeStyle='#fff';ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#34293e';ctx.fillRect(10,222,300,6);ctx.fillStyle=colors[d.preset];ctx.fillRect(10,222,300*Math.min(1,d.env/32767),6);status.textContent='Local native core (not device telemetry) · '+['Amber','Iron','Abyss'][d.preset]+' · energy '+d.energy+' · '+(d.gate?'gate':'release')}
+function pump(){if(!audio||!g||connecting||inFlight)return;const item=queue.shift();if(!item&&next-audio.currentTime>.12)return;const e=epoch,gen=g;
+  inFlight=(async()=>{try{
+    if(item){
+      if(item[0]===5){
+        await request('ribbon',item[1],gen);
+        if(gen===g&&item[1].action==='sketch')nativeSketch=item[1].points.map(p=>[...p]);
+      }else await request('event',{op:item[0],a:item[1],b:item[2]},gen);
+      return
+    }
+    const d=await request('audio',{},gen);if(e!==epoch||gen!==g)return;
+    const localOrbit=captureOrbit(d);
+    // Clock readback cannot override newer queued local intent.
+    if(!queue.length){ribbon.phase=d.ribbon.phase;ribbon.carry=d.ribbon.carry;ribbon.blend=d.ribbon.blend;ribbon.manual=!!d.ribbon.manual;ribbon.x=d.ribbon.x;ribbon.y=d.ribbon.y;}
+    const bytes=Uint8Array.from(atob(d.pcm),c=>c.charCodeAt(0));if(bytes.length!==2400||d.rate!==24000)throw Error('invalid native PCM receipt');const dv=new DataView(bytes.buffer),b=audio.createBuffer(1,bytes.length/2,d.rate),f=b.getChannelData(0);for(let i=0;i<f.length;i++)f[i]=dv.getInt16(i*2,true)/32768;const s=audio.createBufferSource();s.buffer=b;s.connect(bus);sources.add(s);s.onended=()=>sources.delete(s);next=Math.max(next,audio.currentTime+.015);s.start(next);next+=b.duration;
+    if(visuals.length>=8)visuals.shift();visuals.push({at:next,state:{...d,localOrbit}});
+  }catch(err){cancelAudio();g=0;showRibbon();pointer=null;queue.clear();status.textContent='Disconnected: '+err.message;clearInterval(timer);timer=null}})().finally(()=>{inFlight=null;if(queue.length)pump()});
+}
+start.onclick=async()=>{if(connecting)return;connecting=true;start.disabled=true;pointer=null;cancelAudio();queue.clear();clearInterval(timer);timer=null;
+  try{if(inFlight)await inFlight;g=0;if(!audio){audio=new AudioContext();bus=audio.createGain();bus.connect(audio.destination)}await audio.resume();const d=await request('connect',{version:1},0);g=d.generation;nativeSketch=null;showRibbon();next=audio.currentTime;status.textContent='Connected to local core';timer=setInterval(pump,20)}
+  catch(err){g=0;showRibbon();status.textContent='Connection failed: '+err.message}
+  finally{connecting=false;start.disabled=false;pump()}
+};
+function xy(e){const r=pad.getBoundingClientRect(),x=Math.max(0,Math.min(127,Math.round((e.clientX-r.left)/r.width*127))),y=Math.max(0,Math.min(127,Math.round((1-(e.clientY-r.top)/r.height)*127)));if(ribbon.speed)ribbon.take(x,y);event(1,x,y)}
+let last=0;pad.onpointerdown=e=>{if(!g||connecting||pointer!==null)return;pointer=e.pointerId;pad.setPointerCapture(e.pointerId);xy(e);if(pointer!==null&&!held)event(2,1)};
+pad.onpointermove=e=>{if(pointer===e.pointerId&&performance.now()-last>45){last=performance.now();xy(e)}};
+pad.onpointerup=e=>{if(pointer!==e.pointerId)return;pointer=null;ribbon.resume();if(!held)event(2,0);if(ribbon.speed)ribbonCommand('resume')};
+pad.onpointercancel=pad.onlostpointercapture=e=>{if(pointer===e.pointerId)stop()};
+window.addEventListener('blur',stop);document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});document.querySelector('#panic').onclick=stop;
+document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{stop();event(3,Number(b.dataset.p))});
+ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);showSketch();
+</script>
