@@ -35,7 +35,7 @@ async function post(path,q){
   }finally{clearTimeout(timer);}
 }
 function validateAudioReceipt(r,hasPatch){
-  if(!r||typeof r.pcm!=='string'||r.pcm.length!==3200||!/^[A-Za-z0-9+/]+$/.test(r.pcm))throw Error('PCM format');
+  if(!r||typeof r.pcm!=='string'||r.pcm.length!==3200||/[^A-Za-z0-9+/]/.test(r.pcm))throw Error('PCM format');
   if(!Array.isArray(r.levels)||r.levels.length!==6||r.levels.some(n=>!Number.isInteger(n)||n<0||n>131070))throw Error('Modal receipt');
   if(hasPatch&&!validPatch(r.patch))throw Error('Material readback');
 }
