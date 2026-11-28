@@ -134,11 +134,22 @@
       "fields": [
         "shape",
         "speed",
+        "direction (+1 forward, -1 reverse)",
         "phase (next reference tick)",
         "manual",
         "path"
       ],
       "reset": "off on panic/disconnect; queued metadata invalidated with audio"
+    },
+    "orbit_direction": {
+      "scope": "local gesture clock; not a device event or wire field",
+      "values": [
+        1,
+        -1
+      ],
+      "default": 1,
+      "transition": "preserves phase, carry, current XY, manual state and blend; subsequent ticks advance signed direction",
+      "reset": "forward and automation off on panic/disconnect"
     }
   }
 }
