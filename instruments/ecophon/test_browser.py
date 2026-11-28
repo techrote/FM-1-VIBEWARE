@@ -248,6 +248,46 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.wait_for_function("window.ecoRms()>0.001")
             assert page.locator("#memoryA").inner_text()==remembered
             assert page.locator("#memoryB").inner_text()=="F 255 / S 0 / P 255"
+            # Corrupt actual native responses after transport, before the page
+            # consumes them. Each failure must schedule no additional audio,
+            # clear the local state, retire the native generation and recover.
+            page.evaluate("""() => {
+                window.ecoStarts=0; window.ecoPanics=0; window.ecoBad=null;
+                const start=AudioBufferSourceNode.prototype.start;
+                AudioBufferSourceNode.prototype.start=function(...args){
+                    ++window.ecoStarts; return start.apply(this,args);
+                };
+                const original=post;
+                post=async(path,data)=>{
+                    const result=await original(path,data);
+                    if(path==='/panic')++window.ecoPanics;
+                    if(path==='/step' && window.ecoBad){
+                        const kind=window.ecoBad; window.ecoBad=null;
+                        window.ecoBadAt=window.ecoStarts;
+                        if(kind==='agent')result.agents[0].patch=4;
+                        if(kind==='clock')result.ticks+=10;
+                        if(kind==='control')result.controls[1]^=1;
+                        if(kind==='pcm')result.pcm=result.pcm.slice(4);
+                        if(kind==='resource')result.resources[0]=4097;
+                    }
+                    return result;
+                };
+            }""")
+            for kind in ("agent","clock","control","pcm","resource"):
+                old_gen=page.evaluate("generation")
+                panics=page.evaluate("window.ecoPanics")
+                page.evaluate("kind=>window.ecoBad=kind",kind)
+                page.wait_for_function("document.querySelector('#status').textContent.startsWith('Stopped:')")
+                page.wait_for_function("n=>window.ecoPanics>n",arg=panics)
+                page.wait_for_function("window.ecoRms()<0.000001")
+                assert page.evaluate("window.ecoStarts===window.ecoBadAt && visuals.length===0")
+                assert page.locator("#stats").inner_text()==""
+                response=page.request.post(page.url+"step",
+                    headers={"X-Ecophon-Fixture":"1"},
+                    data={"generation":old_gen,"fertility":180,"sharing":200,"pressure":40,"frozen":0})
+                assert response.status==409,response.status
+                page.click("#start")
+                page.wait_for_function("window.ecoRms()>0.001 && +document.querySelector('#stats').dataset.ticks>=10")
             page.click("#stop")
             page.wait_for_function("window.ecoRms()<0.000001")
             assert not errors,errors
