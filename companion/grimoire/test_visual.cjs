@@ -8,7 +8,7 @@ const drawLog=[], frames=[];
 const ctx=new Proxy({}, {get:()=>()=>{},set:()=>true});
 const nodes=new Map();
 function getNode(selector){if(!nodes.has(selector))nodes.set(selector,{getContext:()=>ctx,addEventListener(){},setAttribute(){},textContent:''});return nodes.get(selector)}
-const sandbox={document:{querySelector:getNode,querySelectorAll:()=>[],addEventListener(){}},window:{addEventListener(){}},requestAnimationFrame:f=>frames.push(f),GestureQueue:require('./gesture.js'),atob:()=>'',drawLog};
+const sandbox={document:{querySelector:getNode,querySelectorAll:()=>[],addEventListener(){}},window:{addEventListener(){}},requestAnimationFrame:f=>frames.push(f),GestureQueue:require('./gesture.js'),atob:()=>String.fromCharCode(...new Uint8Array(2400)),clearInterval:()=>{},drawLog};
 vm.createContext(sandbox);vm.runInContext(script,sandbox);
 vm.runInContext('globalThis.originalDraw=draw;draw=d=>drawLog.push(d);audio={currentTime:1};visuals.push({at:1.05,state:1},{at:1.10,state:2})',sandbox);
 frames.shift()();assert.deepEqual(drawLog,[]);
@@ -26,7 +26,7 @@ vm.runInContext('sketchUndo.onclick();addSketchPoint(60,80);addSketchPoint(70,80
 assert.equal(vm.runInContext('draft.length',sandbox),0);
 assert.equal(vm.runInContext('ribbon.shape',sandbox),'sketch');
 assert.equal(vm.runInContext('held&&ribbon.speed===2&&ribbon.path[7][0]===70',sandbox),true);
-vm.runInContext('addSketchPoint(10,10);sketchClear.onclick();clearRibbon()',sandbox);
+vm.runInContext('addSketchPoint(10,10);sketchClear.onclick();clearRibbon();queue.clear()',sandbox);
 assert.equal(vm.runInContext('draft.length===0&&ribbon.shape==="ribbon"&&ribbon.speed===0&&!held&&ribbon.sketch[7][0]===70',sandbox),true);
 console.log('Actual page JS: bounded sketch draft, incomplete rejection, undo, apply and inert saved sketch after panic PASS (DOM stub)');
 
@@ -35,49 +35,13 @@ assert.equal(vm.runInContext('draft.length===1&&ribbon.sketch===oldSketch&&held&
 vm.runInContext('sketchExchange.value=GestureQueue.Ribbon.encodeSketch(Array(8).fill([33,77]));sketchImport.onclick()',sandbox);
 assert.equal(vm.runInContext('draft.length===8&&draft[0][0]===33&&ribbon.sketch===oldSketch&&held&&ribbon.phase===oldPhase&&queue.length===0',sandbox),true);
 vm.runInContext('sketchApply.onclick()',sandbox);
-assert.equal(vm.runInContext('ribbon.sketch[0][0]===33&&ribbon.blend===8&&ribbon.phase===oldPhase&&held&&queue.length===0',sandbox),true);
-vm.runInContext('clearRibbon();sketchExchange.value=savedText;sketchImport.onclick()',sandbox);
+assert.equal(vm.runInContext('ribbon.sketch[0][0]===33&&ribbon.blend===8&&ribbon.phase===oldPhase&&held&&queue.length===2',sandbox),true);
+vm.runInContext('clearRibbon();queue.clear();sketchExchange.value=savedText;sketchImport.onclick()',sandbox);
 assert.equal(vm.runInContext('!held&&ribbon.speed===0&&ribbon.shape==="ribbon"&&draft.length===8&&queue.length===0',sandbox),true);
 console.log('Actual page JS: import is draft-only, malformed import atomic, explicit apply and inert post-panic import PASS (DOM stub)');
 
-// Exercise the actual asynchronous pump with a deferred event response. The
-// audio stub proves timeline metadata, not sound or browser qualification.
-async function checkOrbitTimeline(){
-  const run=s=>vm.runInContext(s,sandbox);
-  run(`g=9;queue.clear();clearRibbon();ribbon.setSpeed(2);held=true;next=0;
-    audio={currentTime:0,createBuffer(){return {duration:.05,getChannelData(){return new Float32Array(0)}}},createBufferSource(){return {connect(){},start(){},stop(){}}}};
-    globalThis.nativeFixture={pcm:"",rate:24000,phase:[1,2,3],energy:1,env:100,gate:1,preset:0,x:42,y:60};
-    request=(kind)=>kind==="event"?new Promise(resolve=>{globalThis.releaseEvent=resolve}):Promise.resolve(nativeFixture);
-    pump();globalThis.firstPending=inFlight;globalThis.submittedPhase=ribbon.phase;
-    ribbon.setShape("crown");ribbon.setDirection(-1);releaseEvent({})`);
-  await run('firstPending');
-  assert.equal(run('visuals.length'),1);
-  assert.equal(run('visuals[0].state.localOrbit.shape'),'ribbon');
-  assert.equal(run('visuals[0].state.localOrbit.direction'),1);
-  assert.equal(run('visuals[0].state.localOrbit.phase===submittedPhase'),true);
-  assert.equal(run('visuals[0].state.localOrbit.path[0][1]'),18);
-  assert.equal(run('visuals[0].state.localOrbit.path!==GestureQueue.Ribbon.path'),true);
-  assert.equal(run('visuals[0].state.localOrbit.path[0]!==GestureQueue.Ribbon.path[0]'),true);
-  run('originalDraw(visuals[0].state)');
-  assert.equal(run('orbitPlayed.textContent.startsWith("Played local orbit: ribbon")'),true);
-  run('audio.currentTime=.07;pump();globalThis.secondPending=inFlight;releaseEvent({})');
-  await run('secondPending');
-  assert.equal(run('visuals.length'),2);
-  assert.equal(run('visuals[1].state.localOrbit.shape'),'crown');
-  assert.equal(run('visuals[1].state.localOrbit.direction'),-1);
-  assert.equal(run('visuals[1].state.localOrbit.path[0][1]'),96);
-  run('originalDraw(visuals[1].state)');
-  assert.equal(run('orbitPlayed.textContent.startsWith("Played local orbit: crown")'),true);
-  assert.equal(run('orbitPlayed.textContent.includes("reverse")'),true);
-  run('ribbon.setSketch(Array(8).fill([10,80]));ribbon.setShape("sketch");globalThis.captured=captureOrbit();ribbon.setSketch(Array(8).fill([100,20]))');
-  assert.equal(run('captured.path[0][0]'),10);
-  assert.equal(run('captured.path[0][1]'),80);
-  run('audio.currentTime=.2;pump();globalThis.thirdPending=inFlight;cancelAudio();releaseEvent({})');
-  await run('thirdPending');
-  assert.equal(run('visuals.length+sources.size'),0);
-  assert.equal(run('captureOrbit()'),null);
-  assert.equal(run('ribbon.direction'),1);
-  assert.equal(run('orbitPlayed.textContent'),'Played local orbit: off');
-  console.log('Actual asynchronous page pump: 20 assertions, detached played paths and directions, delayed response, edit and panic invalidation PASS (DOM/audio stub)');
-}
-checkOrbitTimeline().catch(err=>{console.error(err);process.exitCode=1});
+// Execute the actual page's native pump in a fresh stubbed DOM/audio context.
+const nativeSandbox={...sandbox,document:{querySelector:getNode,querySelectorAll:()=>[],addEventListener(){}},window:{addEventListener(){}},requestAnimationFrame:()=>{},assert};
+vm.createContext(nativeSandbox);
+vm.runInContext(script+"\nasync function nativeCheck(assert){\n  g=9;queue.clear();clearRibbon();nativeSketch=null;held=true;next=0;\n  audio={currentTime:0,createBuffer(){return {duration:.05,getChannelData(){return new Float32Array(1200)}}},createBufferSource(){return {connect(){},start(){},stop(){}}}};\n  const calls=[],fixture={pcm:\"fixture\",rate:24000,state_source:\"local native core\",phase:[1,2,3],energy:1,env:100,gate:1,preset:0,x:42,y:60,\n      ribbon:{shape:0,speed:2,direction:1,phase:17,carry:1,manual:0,blend:0,x:42,y:60,has_sketch:0}};\n  let releaseAudio;\n  ribbon.block=()=>{throw Error(\"browser clock advanced\")};\n  request=(kind,data)=>{calls.push({kind,data});return kind===\"audio\"?new Promise(resolve=>{releaseAudio=resolve}):Promise.resolve({ok:true})};\n  pump();const firstPending=inFlight;\n  assert.equal(typeof releaseAudio,\"function\");\n  ribbon.setShape(\"crown\");selectNativeShape(\"crown\");ribbon.setDirection(-1);ribbonCommand(\"direction\",{value:-1});\n  releaseAudio(fixture);await firstPending;\n  assert.equal(visuals.length,1);assert.equal(visuals[0].state.localOrbit.shape,\"ribbon\");\n  assert.equal(visuals[0].state.localOrbit.phase,17);assert.equal(visuals[0].state.localOrbit.direction,1);\n  assert.equal(ribbon.shape===\"crown\"&&ribbon.direction===-1,true);\n  for(let i=0;i<4&&inFlight;i++)await inFlight;\n  assert.equal(calls[0].kind===\"audio\"&&calls[1].kind===\"ribbon\"&&calls[1].data.action===\"shape\"&&calls[2].data.action===\"direction\",true);\n  audio.currentTime=.07;pump();const secondPending=inFlight;\n  releaseAudio({...fixture,ribbon:{...fixture.ribbon,shape:1,direction:-1,phase:3}});await secondPending;\n  assert.equal(visuals[1].state.localOrbit.shape,\"crown\");assert.equal(visuals[1].state.localOrbit.direction,-1);assert.equal(ribbon.phase,3);\n  nativeSketch=Array.from({length:8},()=>[10,80]);const captured=captureOrbit({...fixture,ribbon:{...fixture.ribbon,shape:3,has_sketch:1}});nativeSketch[0][0]=99;\n  assert.equal(captured.path[0][0],10);\n  audio.currentTime=.2;pump();const thirdPending=inFlight;cancelAudio();releaseAudio(fixture);await thirdPending;\n  assert.equal(visuals.length+sources.size,0);\n  g=9;audio.currentTime=.3;pump();const badPending=inFlight;releaseAudio({...fixture,ribbon:{...fixture.ribbon,phase:256}});await badPending;\n  assert.equal(g,0);assert.equal(visuals.length+sources.size,0);\n}\n",nativeSandbox);
+vm.runInContext('nativeCheck(assert)',nativeSandbox).then(()=>console.log('Native trajectory: serialized controls, actual receipt metadata, delayed panic and malformed receipt PASS (DOM/audio/HTTP stubs)')).catch(err=>{console.error(err);process.exitCode=1});

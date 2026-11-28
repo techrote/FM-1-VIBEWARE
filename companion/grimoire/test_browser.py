@@ -35,6 +35,8 @@ def run(library, executable, screenshot):
                 page = browser.new_page(viewport={'width': 600, 'height': 700})
                 errors = []
                 page.on('pageerror', lambda e: errors.append(str(e)))
+                traffic = []
+                page.on('request', lambda req: traffic.append(req.post_data_json) if req.url.endswith('/api') and req.method == 'POST' else None)
                 page.goto(url)
                 page.locator('#start').click()
                 page.wait_for_function('g > 0 && audio.state === "running"')
@@ -68,6 +70,9 @@ def run(library, executable, screenshot):
                 page.wait_for_function('played && played.gate===1 && peak()>.02')
                 page.evaluate('window.ribbonFirstX=played.x')
                 page.wait_for_function('played.gate===1 && played.x!==ribbonFirstX')
+                # Native clock: automation must not emit synthetic XY events.
+                assert any(d.get('kind') == 'ribbon' and d.get('action') == 'speed' for d in traffic)
+                assert not any(d.get('kind') == 'event' and d.get('op') == 1 for d in traffic)
                 # Changing the trajectory must keep the explicitly held gate and
                 # advance the same clock; verify the bright arc via played native XY.
                 page.locator('#ribbonShape').select_option('crown')
@@ -155,6 +160,7 @@ def run(library, executable, screenshot):
                 gesture()
                 page.mouse.up()
                 silence()
+                assert {'speed','shape','direction','sketch','resume'} <= {d.get('action') for d in traffic if d.get('kind') == 'ribbon'}
                 assert not errors, errors
                 browser.close()
                 print('Chromium actual Web Audio: XY/gate, clock-aligned bounded visuals, release, preset, panic, blur, HTTP abort and reconnect PASS')
