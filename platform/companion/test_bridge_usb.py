@@ -339,6 +339,34 @@ def main():
         endpoint.advance(40)
         witnesses["malformed_recovery_panic"] = endpoint.advance(80)
         assert witnesses["malformed_recovery_panic"]["nonzero"] == 0
+        # A retried Identity is not a mutation: an apparently forward
+        # discovery must not poison the emergency-release sequence.
+        route.action("note 59 110")
+        witnesses["discovery_retry_strike"] = endpoint.advance(100)
+        assert witnesses["discovery_retry_strike"]["nonzero"] > 128
+        last = endpoint.sent[-1]
+        assert last[6] in (3, 5, 6, 7), last
+        seq = last[11] | last[12] << 7
+        retry_seq = (seq + 8191) & 16383
+        retry = list(last[:13]) + [1, 2, 247]
+        retry[6] = 1
+        retry[11], retry[12] = retry_seq & 127, retry_seq >> 7
+        route.transmit({"type": "midi", "data": retry})
+        identity = route.read()
+        assert identity["type"] == "midi", identity
+        assert identity["data"][6] == 2 and identity["data"][7:13] == retry[7:13], identity
+        before = len(endpoint.sent)
+        route.drop()
+        assert len(endpoint.sent) == before + 1
+        panic = endpoint.sent[-1]
+        panic_seq = panic[11] | panic[12] << 7
+        assert panic[6] == 8 and panic[7:11] == last[7:11], panic
+        assert panic_seq == (((seq + 1) & 16383) or 1), panic
+        endpoint.advance(40)
+        witnesses["discovery_retry_panic"] = endpoint.advance(80)
+        assert witnesses["discovery_retry_panic"]["nonzero"] == 0
+        witnesses["discovery_retry_sequences"] = {"mutation": seq, "retry": retry_seq,
+                                                 "panic": panic_seq}
         witnesses["bridge_refusals"] = ["protocol", "token", "preauth MIDI",
                                         "unknown profile", "out-of-range MIDI"]
         report = {"status": "PASS", "route": "shared controller / authenticated localhost TCP / actual emulated USB / actual firmware CPU",
