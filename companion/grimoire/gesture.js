@@ -55,15 +55,17 @@ class OrbitRibbon {
   }
   beginBlend(){this.blend=8;this.fromX=this.x;this.fromY=this.y;}
   constructor(){this.sketch=null;this.reset();}
-  reset(){this.shape='ribbon';this.speed=0;this.phase=0;this.carry=0;this.manual=false;this.blend=0;this.x=24;this.y=18;this.fromX=24;this.fromY=18;}
+  reset(){this.shape='ribbon';this.speed=0;this.direction=1;this.phase=0;this.carry=0;this.manual=false;this.blend=0;this.x=24;this.y=18;this.fromX=24;this.fromY=18;}
   setSpeed(speed){if(![1,2,4].includes(speed))throw RangeError('ribbon speed');this.speed=speed;}
+  // Reverse the existing clock without resetting its phase, carry, gate or blend.
+  setDirection(direction){if(direction!==1&&direction!==-1)throw RangeError('ribbon direction');this.direction=direction;}
   take(x,y){if(![x,y].every(v=>Number.isInteger(v)&&v>=0&&v<=127))throw RangeError('ribbon XY');this.manual=true;this.blend=0;this.x=x;this.y=y;}
   resume(){if(this.manual){this.manual=false;this.beginBlend();}}
   tick(){const i=this.phase>>5,k=this.phase%32,p=this.path[i],q=this.path[(i+1)%8];
     const lerp=(a,b,n,d)=>Math.floor((a*(d-n)+b*n+d/2)/d);
     const x=lerp(p[0],q[0],k,32),y=lerp(p[1],q[1],k,32);
     if(!this.manual){if(this.blend){const n=9-this.blend;this.x=lerp(this.fromX,x,n,8);this.y=lerp(this.fromY,y,n,8);this.blend--;}else{this.x=x;this.y=y;}}
-    this.phase=(this.phase+this.speed)%256;
+    this.phase=(this.phase+this.direction*this.speed+256)%256;
   }
   // The existing native host renders 1200 frames at 24 kHz. Advance
   // exactly 2.5 of the reference 50 Hz ticks per block, alternating 2/3.
