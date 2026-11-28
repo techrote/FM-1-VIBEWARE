@@ -90,17 +90,18 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.evaluate("""() => {
                 window.ecoWitness=[];
                 const original=post, originalControls=stepControls;
-                let arcBlock=null;
+                let arcBlock=null, memoryBlock=null;
                 stepControls=()=>{
                     arcBlock=cue?.id==="cueArc"?cue.block+1:null;
+                    memoryBlock=cue?.id==="recallA"?cue.block+1:null;
                     return originalControls();
                 };
                 post=async(path,data)=>{
-                    const block=path==='/step'?arcBlock:null;
+                    const block=path==='/step'?arcBlock:null, memory=path==='/step'?memoryBlock:null;
                     const result=await original(path,data);
                     if(path==='/step'){
                         window.ecoWitness.push({controls:[data.fertility,data.sharing,data.pressure,data.frozen],
-                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:[...result.controls,result.frozen],generation:result.generation,arcBlock:block});
+                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:[...result.controls,result.frozen],generation:result.generation,arcBlock:block,memoryBlock:memory});
                         if(window.ecoWitness.length>256)window.ecoWitness.shift();
                     }
                     return result;
@@ -188,8 +189,40 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.keyboard.press("Home")
             assert "Manual" in page.locator("#cueStatus").inner_text()
             page.wait_for_function("window.ecoWitness.slice(-2).length===2 && window.ecoWitness.slice(-2).every(r=>r.arcBlock===null && r.controls[1]===0)")
+            # User environment memory: two independent slots, exact native
+            # ramp, snapshot isolation during capture, no habitat reset.
+            def set_environment(keys):
+                for name,key in zip(("fertility","sharing","pressure"),keys):
+                    page.locator("#"+name).focus()
+                    page.keyboard.press(key)
+            set_environment(("Home","End","Home"))
+            page.click("#storeA")
+            assert "F 0 / S 255 / P 0" in page.locator("#memoryA").inner_text()
+            set_environment(("End","Home","End"))
+            page.click("#storeB")
+            assert "F 255 / S 0 / P 255" in page.locator("#memoryB").inner_text()
+            page.evaluate("window.ecoWitness=[]")
+            page.click("#recallA")
+            page.wait_for_function("window.ecoWitness.some(r=>r.memoryBlock===3)")
+            page.click("#storeA") # must not change already-running recall target
+            page.wait_for_function("window.ecoWitness.some(r=>r.memoryBlock===40)",timeout=15000)
+            recalled=page.evaluate("window.ecoWitness.filter(r=>r.memoryBlock!==null)")
+            assert [r["memoryBlock"] for r in recalled]==list(range(1,41))
+            for i,row in enumerate(recalled,1):
+                assert row["controls"]==row["echo"]==[*ramp((255,0,255),(0,255,0),i,40),0],(i,row)
+                assert row["generation"]==recalled[0]["generation"]
+                assert row["ticks"]==recalled[0]["ticks"]+(i-1)*10
+            assert "40/40 complete" in page.locator("#cueStatus").inner_text()
+            assert "F 255 / S 0 / P 255" in page.locator("#memoryB").inner_text()
+            page.click("#recallB")
+            page.check("#frozen")
+            assert page.is_disabled("#recallA") and page.is_disabled("#recallB")
+            assert "Manual" in page.locator("#cueStatus").inner_text()
+            page.uncheck("#frozen")
+            assert not page.is_disabled("#recallA")
             page.click("#stop")
             page.wait_for_function("window.ecoRms()<0.000001")
+            assert page.is_disabled("#recallA") and page.is_disabled("#recallB")
             assert page.is_disabled("#cueArc")
             assert not errors,errors
             browser.close()
