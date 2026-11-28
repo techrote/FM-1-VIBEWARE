@@ -114,3 +114,16 @@ jobs:
         with:
           name: grimoire-${{ matrix.os }}
           path: out/
+      - name: Standalone sample-clock ribbon and matched audio
+        run: |
+          mkdir -p sample-ribbon-out
+          if [ "$RUNNER_OS" = Windows ]; then flags=""; else flags="-fsanitize=undefined -fno-sanitize-recover=all"; fi
+          gcc -std=c11 -Wall -Wextra -Werror -O2 $flags instruments/grimoire/orbit.c instruments/grimoire/test_sample_ribbon.c -o out/sample-ribbon-test
+          ./out/sample-ribbon-test sample-ribbon-out/forward.wav sample-ribbon-out/reverse.wav
+          python -c "import hashlib,pathlib; p=pathlib.Path('sample-ribbon-out'); expected={'forward.wav':'021844388fefda0915ced034c560007a039aa8b8377008b25dc102293aa57f0c','reverse.wav':'952d4b27971636c65079e6a78a344eb0ea2f16926ccefee54c071c25eeb93e3b'}; assert all(hashlib.sha256((p/n).read_bytes()).hexdigest()==h for n,h in expected.items())"
+          cp instruments/grimoire/{orbit.c,orbit.h,sample_ribbon.h,test_sample_ribbon.c} sample-ribbon-out/
+          rm out/sample-ribbon-test*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grimoire-sample-ribbon-${{ matrix.os }}
+          path: sample-ribbon-out/
