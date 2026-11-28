@@ -21,9 +21,9 @@
 <p id="cueStatus" role="status">Manual environment.</p>
 <small>Each cue ramps from the current environment over 40 native block requests (four seconds of model audio when completed). The whole Arc blends into Mutualism, transitions to Drought, holds, recovers and sustains. No reset. Manual sliders, XY, freeze, feedback or panic cancel the active performance.</small></fieldset>
 <fieldset><legend>Environment memories — local session</legend>
-<p><button id="storeA">Capture A</button> <button id="recallA" disabled>Recall A</button> <output id="memoryA">Empty</output></p>
-<p><button id="storeB">Capture B</button> <button id="recallB" disabled>Recall B</button> <output id="memoryB">Empty</output></p>
-<small>Capture the three current slider values (not the ecological state). Recall blends to the saved environment over 40 native blocks without resetting the agents, seed or clock. Memories survive habitat resets in this page, not reloads. Capture never interrupts an active cue; recall snapshots its target and replaces the active cue/feedback. Manual controls, freeze and panic override recall.</small></fieldset>
+<p><button id="storeA" disabled>Capture A</button> <button id="recallA" disabled>Recall A</button> <output id="memoryA">Empty</output></p>
+<p><button id="storeB" disabled>Capture B</button> <button id="recallB" disabled>Recall B</button> <output id="memoryB">Empty</output></p>
+<small>Capture the last completed native control block (not an uncommitted slider position or ecological state). Recall blends in the native controller over 40 blocks without resetting agents, seed or clock. Slots survive habitat resets and page reloads while this local server process runs. Capture never interrupts an active cue; recall snapshots its target and replaces the active cue/feedback. Manual controls, freeze and panic override recall.</small></fieldset>
 <fieldset><legend>Population Tide — optional live feedback</legend>
 <label><input id="feedback" type="checkbox" disabled> Steer living population automatically</label>
 <label>Population goal <input id="goal" type="range" min="1" max="8" value="5"><output id="goalValue">5</output></label>
@@ -41,19 +41,44 @@ let lastLiving=null,cue=null;
 const CUE_BLOCKS=40, ARC_BLOCKS=240;
 const habitatCues={cueBase:[180,200,40],cueDrought:[0,0,255],cueRecovery:[255,220,0]};
 const memories={A:null,B:null};
-function captureMemory(slot){
- if(!Object.hasOwn(memories,slot))return;
- const values=names.map(n=>+$(n).value);
- if(values.some(v=>!Number.isInteger(v)||v<0||v>255))return;
+let pendingMemory=null,memoryBusy=false,nativeRecall=null,controlRevision=0,committedFrozen=false;
+function validMemory(values){
+ return Array.isArray(values)&&values.length===3&&values.every(v=>Number.isInteger(v)&&v>=0&&v<=255);
+}
+function displayMemory(slot,values){
+ if(values!==null&&!validMemory(values))throw Error("bad memory receipt");
  memories[slot]=values;
- $("memory"+slot).textContent="F "+values[0]+" / S "+values[1]+" / P "+values[2];
- feedbackStatus();
+ $("memory"+slot).textContent=values===null?"Empty":"F "+values[0]+" / S "+values[1]+" / P "+values[2];
+}
+function captureMemory(slot){
+ if(!Object.hasOwn(memories,slot)||!live||pendingMemory||memoryBusy)return;
+ pendingMemory={kind:"capture",slot,revision:controlRevision};feedbackStatus();
 }
 function recallMemory(slot){
- if(!Object.hasOwn(memories,slot)||!memories[slot]||!live||$("frozen").checked)return;
+ if(!Object.hasOwn(memories,slot)||!memories[slot]||!live||$("frozen").checked||pendingMemory||memoryBusy)return;
  manualOverride();
- cue={id:"recall"+slot,from:names.map(n=>+$(n).value),to:[...memories[slot]],block:0};
- $("cueStatus").textContent="Recall "+slot+" · 0/"+CUE_BLOCKS;
+ pendingMemory={kind:"recall",slot,revision:controlRevision};feedbackStatus();
+ $("cueStatus").textContent="Recall "+slot+" · waiting for native block";
+}
+// Serialize all memory commands with the audio pump. No parallel command
+// request can race the outstanding render or the generation lease.
+async function serviceMemory(e){
+ const cmd=pendingMemory;
+ if(!cmd||(cmd.kind==="recall"&&committedFrozen))return;
+ pendingMemory=null;memoryBusy=true;feedbackStatus();
+ try{
+  const index=cmd.slot==="A"?0:1;
+  const d=await post("/memory/"+cmd.kind,{generation,slot:index});
+  if(!live||e!==epoch)return;
+  if(d.generation!==generation||d.slot!==index||d.accepted!==true||!validMemory(d.controls))throw Error("bad memory receipt");
+  displayMemory(cmd.slot,d.controls);
+  if(cmd.kind==="recall"&&cmd.revision===controlRevision&&!$("frozen").checked){
+   nativeRecall={slot:cmd.slot,block:0};
+   $("cueStatus").textContent="Recall "+cmd.slot+" · 0/"+CUE_BLOCKS;
+  }
+ }finally{
+  if(e===epoch){memoryBusy=false;feedbackStatus()}
+ }
 }
 for(const slot of ["A","B"]){
  $("store"+slot).onclick=()=>captureMemory(slot);
@@ -75,7 +100,11 @@ function arcControls(from,block){
 function arcSegment(block){
  return block<=40?"Mutualism":block<=80?"Drought transition":block<=120?"Drought hold":block<=160?"Recovery transition":"Recovery hold";
 }
-function cancelCue(){cue=null;$("cueStatus").textContent="Manual environment."}
+function cancelCue(){
+ cue=null;nativeRecall=null;++controlRevision;
+ if(pendingMemory?.kind==="recall")pendingMemory=null;
+ $("cueStatus").textContent="Manual environment.";
+}
 function startArc(){
  if(!live||$("frozen").checked)return;
  manualOverride();
@@ -98,7 +127,10 @@ function populationControls(previous,living,goal){
 function feedbackStatus(){
  $("feedback").disabled=!live||$("frozen").checked;
  [...Object.keys(habitatCues),"cueArc"].forEach(id=>$(id).disabled=!live||$("frozen").checked);
- for(const slot of ["A","B"])$("recall"+slot).disabled=!live||$("frozen").checked||!memories[slot];
+ for(const slot of ["A","B"]){
+  $("store"+slot).disabled=!live||!!pendingMemory||memoryBusy;
+  $("recall"+slot).disabled=!live||$("frozen").checked||!memories[slot]||!!pendingMemory||memoryBusy;
+ }
  $("feedbackStatus").textContent=($("feedback").checked?"Population feedback active":"Manual environment")+(lastLiving===null?"":" · last completed native block: "+lastLiving+"/8 living");
 }
 function manualOverride(){ cancelCue();$("feedback").checked=false;feedbackStatus(); }
@@ -160,20 +192,35 @@ async function pump(e){
  if(!live||e!==epoch)return;
  if(next-ctx.currentTime>0.16||visuals.length>=MAX_VISUALS){timer=setTimeout(()=>pump(e),25);return}
  try{
-  const [fertility,sharing,pressure,frozen]=stepControls();
-  const d=await post("/step",{generation,fertility,sharing,pressure,frozen});
+  await serviceMemory(e);
+  if(!live||e!==epoch)return;
+  const recall=nativeRecall;
+  let d;
+  if(recall){
+   d=await post("/memory/step",{generation});
+  }else{
+   const [fertility,sharing,pressure,frozen]=stepControls();
+   d=await post("/step",{generation,fertility,sharing,pressure,frozen});
+  }
   if(!live||e!==epoch)return;
   const raw=atob(d.pcm);if(raw.length!==4800||d.rate!==24000||d.generation!==generation)throw Error("bad audio block");
   const b=ctx.createBuffer(1,2400,24000),a=b.getChannelData(0);
   for(let i=0;i<a.length;i++){let v=raw.charCodeAt(i*2)|(raw.charCodeAt(i*2+1)<<8);a[i]=(v>=32768?v-65536:v)/32768}
   const src=ctx.createBufferSource();src.buffer=b;src.connect(gain);
   next=Math.max(next,ctx.currentTime+0.015);src.start(next);next+=b.duration;
+  committedFrozen=!!d.frozen;
+  if(recall&&nativeRecall===recall){
+   sliders([...d.controls,d.frozen]);
+   ++recall.block;
+   $("cueStatus").textContent="Recall "+recall.slot+" · "+recall.block+"/"+CUE_BLOCKS+(recall.block===CUE_BLOCKS?" complete":"");
+   if(recall.block===CUE_BLOCKS)nativeRecall=null;
+  }
   lastLiving=d.agents.reduce((n,a)=>n+(a.alive?1:0),0);feedbackStatus();
   delete d.pcm;visuals.push({at:next,state:d});timer=setTimeout(()=>pump(e),5);
  }catch(err){if(e===epoch){stop();$("status").textContent="Stopped: "+err.message}}
 }
 function stop(){
- ++epoch;live=false;lastLiving=null;manualOverride();clearTimeout(timer);cancelAnimationFrame(raf);visuals.length=0;$("stats").textContent="";for(const key of ["ticks","pressure","fertility","regime"])delete $("stats").dataset[key];$("habitat").getContext("2d").clearRect(0,0,640,360);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
+ ++epoch;live=false;lastLiving=null;pendingMemory=null;memoryBusy=false;committedFrozen=false;manualOverride();clearTimeout(timer);cancelAnimationFrame(raf);visuals.length=0;$("stats").textContent="";for(const key of ["ticks","pressure","fertility","regime"])delete $("stats").dataset[key];$("habitat").getContext("2d").clearRect(0,0,640,360);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
  const old=generation;generation=0;if(old)post("/panic",{generation:old}).catch(()=>{});
  $("status").textContent="Stopped / locally muted.";
 }
@@ -187,7 +234,10 @@ $("start").onclick=async()=>{
   if(!Number.isInteger(seed)||seed<0||seed>4294967295)throw Error("invalid seed");
   const d=await post("/reset",{seed,preset});
   if(e!==epoch){post("/panic",{generation:d.generation}).catch(()=>{});return}
-  generation=d.generation;sliders(d.controls);gain=ctx.createGain();gain.gain.value=0.55;gain.connect(ctx.destination);
+  generation=d.generation;sliders(d.controls);committedFrozen=!!d.controls[3];
+  if(!Array.isArray(d.memory_slots)||d.memory_slots.length!==2)throw Error("bad memory slots");
+  ["A","B"].forEach((slot,i)=>displayMemory(slot,d.memory_slots[i]));
+  gain=ctx.createGain();gain.gain.value=0.55;gain.connect(ctx.destination);
   live=true;feedbackStatus();next=ctx.currentTime+0.04;$("status").textContent="Playing native ecological model.";animate(e);pump(e);
  }catch(err){if(e===epoch){stop();$("status").textContent=err.message}}finally{starting=false;$("start").disabled=false}
 };
