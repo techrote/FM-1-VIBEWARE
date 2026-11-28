@@ -99,11 +99,12 @@ class EmulatedUSB:
 class Route:
     def __init__(self, endpoint, native):
         self.endpoint, self.native = endpoint, native
+        self.clock = 0.0
         # Freeze the bridge timeout clock for the deterministic instruction-clock
         # fixture. Transport timeout is covered separately in CYDaux bridge tests.
         self.server = BridgeServer(endpoint, "fixture-token", port=0, mode="midi",
                                    profile="xenoresonator-native", name=endpoint.detail,
-                                   clock=lambda: 0.0)
+                                   clock=lambda: self.clock)
         self.sock = None
         self.decoder = LineDecoder()
         self.frames = deque()
@@ -122,10 +123,47 @@ class Route:
                 self.frames.extend(self.decoder.feed(chunk))
         return self.frames.popleft()
 
-    def connect(self):
+    def open_socket(self):
+        assert self.sock is None
         self.sock = socket.create_connection(self.server.address, timeout=5)
         self.decoder = LineDecoder()
         self.frames.clear()
+
+    def reject_hello(self, frame):
+        before = len(self.endpoint.sent)
+        self.open_socket()
+        self.transmit(frame)
+        assert self.read()["type"] == "error"
+        self.await_retired()
+        assert len(self.endpoint.sent) == before, "unauthenticated MIDI reached target"
+
+    def await_retired(self):
+        for _ in range(100):
+            self.server.step(0.001)
+            if self.server.client is None:
+                self.sock.close()
+                self.sock = None
+                # Drain any retired endpoint reply while no controller exists.
+                self.server.step(0)
+                return
+        raise AssertionError("bridge failed to retire controller")
+
+    def reject_command(self, frame):
+        before = len(self.endpoint.sent)
+        self.transmit(frame)
+        assert self.read()["type"] == "error"
+        assert len(self.endpoint.sent) == before, "bridge-rejected command reached USB"
+
+    def target_error(self, packet, code):
+        self.transmit({"type": "midi", "data": packet})
+        reply = self.read()
+        assert reply["type"] == "midi", reply
+        data = reply["data"]
+        assert data[:7] == [240, 125, 67, 89, 1, 0, 9], data
+        assert data[7:13] == packet[7:13] and data[14] == code, data
+
+    def connect(self):
+        self.open_socket()
         self.transmit({"type": "hello", "protocol": 1, "token": "fixture-token"})
         hello = self.read()
         assert hello["type"] == "hello" and hello["ready"] and hello["mode"] == "midi"
@@ -172,7 +210,13 @@ def main():
     try:
         native = NativeCore(SIM)
         route = Route(endpoint, native)
+        # Refusals must be proven against the actual USB adapter, not a mock.
+        route.reject_hello({"type": "hello", "protocol": 2, "token": "fixture-token"})
+        route.reject_hello({"type": "hello", "protocol": 1, "token": "wrong-token"})
+        route.reject_hello({"type": "midi", "data": [144, 48, 110]})
         route.connect()
+        route.reject_command({"type": "profile", "id": "unimplemented-profile"})
+        route.reject_command({"type": "midi", "data": [144, 48, 256]})
         for command in ("echo off", "profile xenoresonator-native", "transport wifi", "connect"):
             native.command(command)
         state = route.exchange()
@@ -218,6 +262,54 @@ def main():
         assert stale["type"] == "midi" and stale["data"][6] == 9 and stale["data"][14] == 3, stale
         witnesses["stale_session"] = endpoint.advance(80)
         assert witnesses["stale_session"]["nonzero"] == 0, witnesses
+        # Version and instrument-profile refusals must not alter the active
+        # target state or consume the valid controller's next sequence.
+        wrong_version = list(latest_discover)
+        wrong_version[4] = 2
+        route.target_error(wrong_version, 2)
+        wrong_profile = list(latest_discover)
+        wrong_profile[14] = 1
+        route.target_error(wrong_profile, 4)
+        witnesses["version_profile_refusal"] = endpoint.advance(80)
+        assert witnesses["version_profile_refusal"]["nonzero"] == 0
+        state = route.action("tick 100")
+        assert state["companionReady"] and state["telemetryAvailable"], state
+
+        # Advance ONLY the bridge clock: target time is intentionally still
+        # well inside the 1.5 s endpoint lease. This isolates TCP timeout panic
+        # from a false pass caused by firmware lease expiry.
+        route.action("note 52 110")
+        assert endpoint.advance(100)["nonzero"] > 128
+        before = len(endpoint.sent)
+        route.clock += 5.9
+        route.server.step(0)
+        assert route.server.client is not None and len(endpoint.sent) == before
+        route.clock += 0.2
+        route.await_retired()
+        assert len(endpoint.sent) == before + 1 and endpoint.sent[-1][6] == 8
+        endpoint.advance(40)
+        witnesses["bridge_timeout"] = endpoint.advance(80)
+        assert witnesses["bridge_timeout"]["nonzero"] == 0
+
+        # Re-establish a fresh session, then fail framing while a note sounds.
+        endpoint.advance(1600)
+        native.command("disconnect")
+        native.outgoing.clear()
+        route.connect()
+        state = route.action("connect")
+        assert state["companionReady"] and state["telemetryAvailable"], state
+        route.action("note 55 110")
+        assert endpoint.advance(100)["nonzero"] > 128
+        before = len(endpoint.sent)
+        route.sock.sendall(b'{"type":"ping","id":1,"id":2}\\n')
+        assert route.read()["type"] == "error"
+        route.await_retired()
+        assert len(endpoint.sent) == before + 1 and endpoint.sent[-1][6] == 8
+        endpoint.advance(40)
+        witnesses["malformed_frame"] = endpoint.advance(80)
+        assert witnesses["malformed_frame"]["nonzero"] == 0
+        witnesses["bridge_refusals"] = ["protocol", "token", "preauth MIDI",
+                                        "unknown profile", "out-of-range MIDI"]
         report = {"status": "PASS", "route": "shared controller / authenticated localhost TCP / actual emulated USB / actual firmware CPU",
                   "physical": "NOT RUN", "timing": "instruction-clock, explicit modeled advances",
                   "messages": len(endpoint.sent), "witnesses": witnesses}
