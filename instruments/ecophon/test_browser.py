@@ -93,7 +93,7 @@ with make_server(Path(sys.argv[1]),0) as server:
                     const result=await original(path,data);
                     if(path==='/step'){
                         window.ecoWitness.push({controls:[data.fertility,data.sharing,data.pressure,data.frozen],
-                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:result.controls,generation:result.generation});
+                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:[...result.controls,result.frozen],generation:result.generation});
                         if(window.ecoWitness.length>32)window.ecoWitness.shift();
                     }
                     return result;
