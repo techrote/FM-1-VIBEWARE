@@ -74,6 +74,17 @@ jobs:
           rm out/ribbon-test*
           python -c "import hashlib,pathlib; p=pathlib.Path('ribbon-out'); expected={'ribbon.wav':'656e0005c1bf3f3938e1e53421eb08388a6277a7ac4459fcb4055be6cd4d8c00','fixed-y.wav':'f177381f4a167347d7c6f02697bb1a4bfb23b06b77b1b696638e56764459b8f8','ribbon.csv':'1330ce29c3fb722095acdf3af217032b2d1beb3473e4007a2414b46678adafaf'}; assert all(hashlib.sha256((p/n).read_bytes()).hexdigest()==h for n,h in expected.items()), 'ribbon hash mismatch'"
           cp instruments/grimoire/ribbon.c ribbon-out/
+      - name: Orbit direction actual-core matched comparison
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then ext=dll; else ext=so; fi
+          python companion/grimoire/direction_replay.py "extracted Orbit Gate/orbit.$ext" direction-out --revision "$EXPECTED_SOURCE"
+          cp companion/grimoire/direction_replay.py direction-out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grimoire-direction-replay-${{ matrix.os }}
+          path: direction-out/
       - uses: actions/upload-artifact@v4
         with:
           name: grimoire-sketch-replay-${{ matrix.os }}
