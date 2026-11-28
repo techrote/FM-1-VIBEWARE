@@ -22,6 +22,19 @@ jobs:
         working-directory: instruments/xenoresonator
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source before building
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SOURCE" ]; then
+            printf 'Source mismatch: expected %s, checked out %s\n' "$EXPECTED_SOURCE" "$actual" >&2
+            exit 1
+          fi
+          printf 'Qualified source: %s\n' "$actual"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -80,6 +93,19 @@ jobs:
         working-directory: instruments/xenoresonator
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source before building
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SOURCE" ]; then
+            printf 'Source mismatch: expected %s, checked out %s\n' "$EXPECTED_SOURCE" "$actual" >&2
+            exit 1
+          fi
+          printf 'Qualified source: %s\n' "$actual"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
