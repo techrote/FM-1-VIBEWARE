@@ -3,7 +3,7 @@
   "version": 1,
   "status": "provisional local semantics; not a wire protocol",
   "intendedTier": "basic MIDI clock/controls where verified; enhanced pattern editing and clock telemetry where supported",
-  "verifiedTier": "native standalone core and local fixture; native/browser CI 46063499182 PASS; independent frozen FM-1 virtual target CI 46066974168 PASS; no companion route qualified",
+  "verifiedTier": "Native standalone and local browser playback: author 46097657335 and independent Chronomorph Linux/Windows 46100339386 PASS for 22fa6233; frozen FM-1 virtual target independently qualified 46066974168; no companion route qualified",
   "sampleRate": 24000,
   "parameters": [
     {
@@ -57,7 +57,8 @@
     ],
     "editing": "local reversible cyclic rotation and evenly spaced density fill; resulting length/mask only, no new wire command",
     "scenes": "Four local volatile scene slots capture BPM/warp/variation and all length/mask pairs. Recall atomically at next local block, preserving session, transport, seed and clocks; no wire command.",
-    "liveScore": "Lattice Variations local playback: four fixed factory cues, 100 accepted 50 ms blocks each, existing session/clock preserved; manual controls, scene recall, pause or disconnect cancel; auto-pause after 400 blocks. No wire command."
+    "liveScore": "Lattice Variations local playback: four fixed factory cues, 100 accepted 50 ms blocks each, existing session/clock preserved; manual controls, scene recall, pause or disconnect cancel; auto-pause after 400 blocks. No wire command.",
+    "savedScore": "Local occupied-scene snapshot in ascending slot order; 1–10 whole seconds per cue, 20 accepted 50ms blocks per second, maximum 800 blocks; bank edits and duration changes affect next score only; manual musical control/pause/panic cancels; auto-pause on completion. No wire command."
   },
   "events": [
     "start",
