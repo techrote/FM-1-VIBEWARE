@@ -1,0 +1,62 @@
+name: Integration private Windows audition collection
+on:
+  pull_request:
+    paths: ['integration/collection.py','integration/README.md','.github/workflows/integration-collection.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  windows-collection:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: e6a3a79461c7f2672b266685c1ed3081f384c17c
+          path: qa-pinned
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download exact original archives and stage pinned QA selector
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p 'original archives' integration/qa-selector
+          for f in selector.py native-packages.json SELECTOR.md; do
+            git -C qa-pinned show HEAD:catalogue/$f > integration/qa-selector/$f
+          done
+          python -c 'import sys; sys.path.insert(0,"integration"); import collection as c; print("\n".join(n+" "+str(p[2]) for n,p in c.PINS.items()))' > pins.txt
+          while read -r instrument id; do
+            id=${id%$'\r'}
+            [[ "$id" =~ ^[0-9]+$ ]]
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "original archives/$instrument.zip"
+          done < pins.txt
+      - name: Reproducible local assembly and all four actual extracted native server probes
+        run: |
+          set -euo pipefail
+          python integration/collection.py prepare 'original archives' --out 'Owner audition'
+          python integration/collection.py prepare 'original archives' --out 'Repeat audition'
+          cmp 'Owner audition/collection.json' 'Repeat audition/collection.json'
+          python integration/collection.py probe 'Owner audition'
+      - name: Stage source-only tooling and receipt (no native binaries)
+        run: |
+          mkdir -p delivery/qa-selector
+          cp integration/collection.py integration/README.md delivery/
+          cp integration/qa-selector/* delivery/qa-selector/
+          cp 'Owner audition/collection.json' delivery/
+          git rev-parse HEAD > delivery/integration-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibeware-private-audition-source
+          path: delivery/
+          if-no-files-found: error
