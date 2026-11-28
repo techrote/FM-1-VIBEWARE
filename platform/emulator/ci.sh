@@ -66,6 +66,7 @@ EXE="$TMP/emu/target/release/fm1-emu"
 run_case() {
   local image="$1" name="$2" part="$3" note="$4"
   local keys="${5:-600-700:N$note,900-1000:PLAY,3600-3700:HOME}"
+  local ms="${6:-4500}"
   local dir="$TMP/run-$name"
   local -a snapshots=()
   case "$name" in
@@ -74,11 +75,11 @@ run_case() {
   mkdir -p "$dir/work"
   (
     cd "$dir"
-    FM1_LCD_TIMED=1 timeout 300 "$EXE" --bin "$image" --entry 0x02000120 --ms 4500 --keys "$keys" --flash-chip "$part" --wav "$RES/$name.wav" "${snapshots[@]}" --quiet
+    FM1_LCD_TIMED=1 timeout 300 "$EXE" --bin "$image" --entry 0x02000120 --ms "$ms" --keys "$keys" --flash-chip "$part" --wav "$RES/$name.wav" "${snapshots[@]}" --quiet
   ) > "$RES/$name.log" 2>&1
   python3 "$TMP/mhac/emulator-qualification-001/analyze_wav.py" "$RES/$name.wav" --require-audio --silent-tail-ms 500 | tee "$RES/$name.json"
   # Ensure a substantial capture, not a truncated file that happens to end in silence.
-  python3 -c 'import sys,wave; w=wave.open(sys.argv[1]); assert w.getnframes() >= 44100*4' "$RES/$name.wav"
+  python3 -c 'import sys,wave; w=wave.open(sys.argv[1]); assert w.getnframes() >= 44100*(int(sys.argv[2])-500)//1000' "$RES/$name.wav" "$ms"
   if (( ${#snapshots[@]} )); then
     for ms in 1200 2400; do
       test -s "$dir/work/lcd_$ms.bmp"
@@ -159,16 +160,20 @@ run_chronomorph() (
 trap - EXIT
 set -e
 # Third consumer. Preserve all gates while collecting independent evidence.
-CHRONO=be57d9f77e9325271adbd4558dfd554c6cd81e19
+CHRONO=b637b5a797689b3f0853e7b6727e87524462e000
 checkout https://github.com/techrote/FM-1-VIBEWARE.git "$TMP/chrono-core" "$CHRONO"
 ENGINE="$TMP/chrono-core/instruments/chronomorph"
 printf 'chronomorph_core=%s\n' "$CHRONO" >> "$RES/pins.txt"
 for cc in gcc clang; do
   "$cc" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -O2 -I"$ENGINE" "$HERE/test_chrono_runtime.c" "$ENGINE/chrono.c" -o "$TMP/test-chrono"
   "$TMP/test-chrono" | tee "$RES/chronomorph-adapter-$cc.txt"
+  "$cc" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -O2 -I"$ENGINE" "$HERE/test_chrono_performance_rate.c" "$ENGINE/chrono.c" -o "$TMP/test-chrono-performance-rate"
+  "$TMP/test-chrono-performance-rate" | tee "$RES/chronomorph-performance-rate-$cc.txt"
+  "$cc" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -O2 -I"$ENGINE" "$HERE/test_chrono_score_rate.c" "$ENGINE/chrono.c" -o "$TMP/test-chrono-score-rate"
+  "$TMP/test-chrono-score-rate" | tee "$RES/chronomorph-score-rate-$cc.txt"
 done
 cp "$HERE/chrono_app.c" firmware/src/dinghy.c
-"$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffunction-sections -fno-builtin -Wall -Wno-unused-function -Ifirmware/hal -Ifirmware/src -Ifirmware/gen -I"$ENGINE" -I"$HERE" -DAPP_VER='"dev"' -DFELUCCA_ID='"FM-1_990"' -c firmware/src/dinghy.c -o "$TMP/chrono-app.o"
+"$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffunction-sections -fno-builtin -Wall -Wno-unused-function -Ifirmware/hal -Ifirmware/src -Ifirmware/gen -I"$ENGINE" -I"$HERE" -I"$HERE/include" -DAPP_VER='"dev"' -DFELUCCA_ID='"FM-1_990"' -c firmware/src/dinghy.c -o "$TMP/chrono-app.o"
 "$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffreestanding -fno-builtin -ffunction-sections -I"$HERE/include" -Wall -Wextra -Werror -c "$ENGINE/chrono.c" -o "$TMP/chrono.o"
 "$TC/ld.lld" --gc-sections -e _start -T firmware/app.ld -Map="$RES/chronomorph.map" "$TMP/crt0.o" "$TMP/fm1_vec.o" "$TMP/fm1_isr.o" "$TMP/chrono-app.o" "$TMP/chrono.o" -o "$TMP/chronomorph.elf"
 "$TC/llvm-readelf" -h -l "$TMP/chronomorph.elf" | tee "$RES/chronomorph-elf.txt"
@@ -184,8 +189,28 @@ cmp "$RES/chrono-preset.wav" "$RES/chrono-preset-repeat.wav"
 live_contrast chrono-low chrono-preset | tee "$RES/chrono-preset-intervention.json"
 run_case "$TMP/chronomorph.xip.bin" chrono-tempo p25q80 3 "600-700:N3,900-1000:PLAY,1700:K1:+12,3600-3700:HOME"
 live_contrast chrono-low chrono-tempo | tee "$RES/chrono-tempo-intervention.json"
+run_case "$TMP/chronomorph.xip.bin" chrono-score p25q80 3 "600-700:N3,900-1000:PLAY,1700-1900:SEQ,3600-3700:HOME"
+live_contrast chrono-low chrono-score | tee "$RES/chrono-score-intervention.json"
+run_case "$TMP/chronomorph.xip.bin" chrono-score-natural p25q80 3 "900-1000:SEQ" 14500
+python3 - "$RES/chrono-score-natural.wav" <<'PY_SCORE' | tee "$RES/chrono-score-natural.json"
+import json, sys, wave
+with wave.open(sys.argv[1], 'rb') as w:
+    assert (w.getnchannels(),w.getsampwidth(),w.getframerate()) == (2,2,44100)
+    counts=[]
+    for t in (1,5,9):
+        w.setpos(t*44100)
+        raw=w.readframes(2*44100)
+        assert len(raw)==2*44100*4
+        n=sum(raw[i:i+4]!=b'\x00'*4 for i in range(0,len(raw),4))
+        assert n>0, 'missing sounding score cue'
+        counts.append(n)
+    w.setpos(13*44100)
+    tail=w.readframes(w.getnframes()-13*44100)
+    assert len(tail)>=22050*4 and not any(tail), 'natural score completion or no-restart gate failed'
+    print(json.dumps(dict(cue_window_nonzero_frames=counts, silent_after_13s_frames=len(tail)//4)))
+PY_SCORE
 cmp "$RES/chrono-low.wav" "$RES/chrono-low-repeat.wav"
-for other in chrono-warp chrono-preset chrono-tempo; do
+for other in chrono-warp chrono-preset chrono-tempo chrono-score; do
   if cmp -s "$RES/chrono-low.wav" "$RES/$other.wav"; then
     echo "FAIL: Chronomorph panel control aliased: $other" >&2; exit 1
   fi

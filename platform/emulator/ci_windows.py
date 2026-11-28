@@ -27,14 +27,14 @@ URL = 'https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.
 CORES = {
     'grimoire': ('core', '03102e8d82148a6dba871024f5944246e0c913e2', 'orbit', 'grimoire'),
     'ecophon': ('ecophon_core', 'acdc41839665271372cd69df1d09f5550556c87e', 'ecophon', 'ecophon'),
-    'chronomorph': ('chronomorph_core', 'be57d9f77e9325271adbd4558dfd554c6cd81e19', 'chrono', 'chrono'),
+    'chronomorph': ('chronomorph_core', 'b637b5a797689b3f0853e7b6727e87524462e000', 'chrono', 'chrono'),
 }
 BASE = '600-700:N3,900-1000:PLAY,3600-3700:HOME'
 PRESET = '600-700:N3,900-1000:PLAY,1700-1900:SCL,3600-3700:HOME'
 CASES = {
     'grimoire': [('orbit-n3', BASE), ('orbit-n3-repeat', BASE), ('orbit-n9', BASE.replace('N3', 'N9')), ('orbit-n3-uc25', BASE)],
     'ecophon': [('eco-low', BASE), ('eco-low-repeat', BASE), ('eco-high', BASE.replace('N3', 'N24')), ('eco-scarcity', PRESET), ('eco-scarcity-repeat', PRESET)],
-    'chronomorph': [('chrono-low', BASE), ('chrono-low-repeat', BASE), ('chrono-warp', BASE.replace('N3', 'N24')), ('chrono-preset', PRESET), ('chrono-preset-repeat', PRESET), ('chrono-tempo', '600-700:N3,900-1000:PLAY,1700:K1:+12,3600-3700:HOME')],
+    'chronomorph': [('chrono-low', BASE), ('chrono-low-repeat', BASE), ('chrono-warp', BASE.replace('N3', 'N24')), ('chrono-preset', PRESET), ('chrono-preset-repeat', PRESET), ('chrono-tempo', '600-700:N3,900-1000:PLAY,1700:K1:+12,3600-3700:HOME'), ('chrono-score', '600-700:N3,900-1000:PLAY,1700-1900:SEQ,3600-3700:HOME'), ('chrono-score-natural', '900-1000:SEQ')],
 }
 
 
@@ -108,7 +108,7 @@ def build_target(name, work, dinghy, tc, results):
     clang = tc / 'clang.exe'
     flags = ['-target', 'pi32v2', '-mcpu=ac791n']
     app, dsp = work / (name + '-app.o'), work / (name + '-core.o')
-    run([clang, *flags, '-Os', '-ffunction-sections', '-fno-builtin', '-Wall', '-Wno-unused-function', '-Ifirmware/hal', '-Ifirmware/src', '-Ifirmware/gen', '-I'+str(src), '-I'+str(HERE), '-DAPP_VER="dev"', '-DFELUCCA_ID="FM-1_990"', '-c', 'firmware/src/dinghy.c', '-o', app], dinghy, results / (name + '-compile-app.txt'))
+    run([clang, *flags, '-Os', '-ffunction-sections', '-fno-builtin', '-Wall', '-Wno-unused-function', '-Ifirmware/hal', '-Ifirmware/src', '-Ifirmware/gen', '-I'+str(src), '-I'+str(HERE), *(['-I'+str(HERE / 'include')] if name == 'chronomorph' else []), '-DAPP_VER="dev"', '-DFELUCCA_ID="FM-1_990"', '-c', 'firmware/src/dinghy.c', '-o', app], dinghy, results / (name + '-compile-app.txt'))
     run([clang, *flags, '-Os', '-ffreestanding', '-fno-builtin', '-ffunction-sections', '-I'+str(HERE / 'include'), '-Wall', '-Wextra', '-Werror', '-c', src / (engine + '.c'), '-o', dsp], dinghy, results / (name + '-compile-core.txt'))
     objs = []
     for source in ('firmware/crt0.S', 'firmware/hal/fm1_vec.S', 'firmware/hal/fm1_isr.S'):
@@ -179,7 +179,8 @@ def target(name, work, dinghy, tc, results, linux, emu, live):
         cwd = work / case; cwd.mkdir()
         wav = results / (case + '.wav')
         chip = 'uc25hq80' if case.endswith('-uc25') else 'p25q80'
-        run([emu, '--bin', image, '--entry', '0x02000120', '--ms', '4500', '--keys', keys, '--flash-chip', chip, '--wav', wav, '--quiet'], cwd, results / (case + '.log'), env, 300)
+        ms = '14500' if case == 'chrono-score-natural' else '4500'
+        run([emu, '--bin', image, '--entry', '0x02000120', '--ms', ms, '--keys', keys, '--flash-chip', chip, '--wav', wav, '--quiet'], cwd, results / (case + '.log'), env, 300)
         (results / (case + '-match.json')).write_text(json.dumps(check_wav(wav, linux / wav.name), indent=2))
     live_witness(name, work, results, live, image)
 
@@ -246,7 +247,7 @@ def main(linux, results):
 CONTROLS = {
     'grimoire': 'PLAY gate, note keys pitch, K1 material, SEL preset, HOME mute',
     'ecophon': 'PLAY ecology, K1 fertility, K2 pressure, note keys pressure, SEL regime, HOME mute',
-    'chronomorph': 'PLAY transport, K1 tempo, K2 warp, K3 variation, SCL composition, HOME mute',
+    'chronomorph': 'PLAY transport, K1 tempo, K2 warp, K3 variation, SCL composition, SEQ 12-second score, HOME mute',
 }
 
 
