@@ -1,7 +1,7 @@
 name: QA successor native archives and replay alignment
 on:
   pull_request:
-    paths: ['.github/workflows/qa-successor-native.yml','qualification/successor_scores.py','qualification/verify_replay.py','qualification/verify_patch_gallery.py','qualification/verify_lattice.py']
+    paths: ['.github/workflows/qa-successor-native.yml','qualification/successor_scores.py','qualification/verify_replay.py','qualification/verify_patch_gallery.py','qualification/verify_lattice.py','qualification/verify_live_replays.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,93 +13,109 @@ jobs:
       matrix:
         include:
           - instrument: ecophon
-            ref: b45da66cbe49328d7c9da53269ad050171ffcf60
+            ref: feda1327f93f10b4070e8596cab09141c9203c4d
             os: ubuntu-24.04
-            artifact: 15241894648
-            digest: 22146a0ca91acc64ab5b4b3794afea57f3c7641787fd5ed4d30d98f06f18ca33
+            artifact: 15244153911
+            digest: ae3507fb79e6950842023f6647fad6c6c06d2c41de0764e98417336fc6357d76
             score: 0
             score_digest: none
             gallery: 0
             gallery_digest: none
             lattice: 0
             lattice_digest: none
+            sketch: 0
+            sketch_digest: none
           - instrument: ecophon
-            ref: b45da66cbe49328d7c9da53269ad050171ffcf60
+            ref: feda1327f93f10b4070e8596cab09141c9203c4d
             os: windows-latest
-            artifact: 15242455667
-            digest: 80f278a94ced48a55c39d528174d5bbf507cea41ffb00b8f99e55f6b52f0a2a8
+            artifact: 15243929322
+            digest: 460a50113c35d263755a9d6a04941cc4119c397a6d48739086a732727aeb95b6
             score: 0
             score_digest: none
             gallery: 0
             gallery_digest: none
             lattice: 0
             lattice_digest: none
+            sketch: 0
+            sketch_digest: none
           - instrument: grimoire
-            ref: 34d717a0f536ccae38d32767df1b957adf09351e
+            ref: 8b08c63284df7d67994f65b1738197b3d10bc8de
             os: ubuntu-24.04
-            artifact: 15242990953
-            digest: 13c90586fc22685230935221993feda5f007c21be84a1adebf1a26fd635d01ae
-            score: 15243150828
-            score_digest: a58eb02333b0de463758201616cc8a8246884a204ad6245c6c3f5445856410e0
+            artifact: 15245016590
+            digest: 309c680ec508819b27eb0b5d64b87dcc8a4a683542cab511cddc5f88aa30a416
+            score: 15245141100
+            score_digest: 8d394f09340128d62265708b357c012e8d498a002e6b4bedf46570c459bd8f22
             gallery: 0
             gallery_digest: none
             lattice: 0
             lattice_digest: none
+            sketch: 15245111130
+            sketch_digest: b8fc1532ad800ca0909717389e4cb35e5348559b6c87814be9d60f6883c004f5
           - instrument: grimoire
-            ref: 34d717a0f536ccae38d32767df1b957adf09351e
+            ref: 8b08c63284df7d67994f65b1738197b3d10bc8de
             os: windows-latest
-            artifact: 15242338471
-            digest: c7c5fe921bfcf73dc1d8d66414819dd384a6119f36cde8acc84c71c731447bce
-            score: 15243385336
-            score_digest: ded90478415ce60e1b747d5eac9e4cc25a1a2440ca45de7cf99a42e749a8f812
+            artifact: 15244921881
+            digest: cddb5fbe9f9db34b6ca91379ed451fa3aea96086e002d5ac6b03518c3bc3ff1e
+            score: 15245355428
+            score_digest: 5b537d5c5d45aa130e3de23f8df78662d1f93edef085fd9cb6a29150a0885e14
             gallery: 0
             gallery_digest: none
             lattice: 0
             lattice_digest: none
+            sketch: 15244872387
+            sketch_digest: 0a40d35980d79f71c4efa7384bbf9c30cac1bc77d1d21570d9d6aa30d4ec790f
           - instrument: xenoresonator
-            ref: f018269abdda85f76ab693f75036a9fcec5776d0
+            ref: c5df5924898aae7d9e23f717bc35990565fc2607
             os: ubuntu-24.04
-            artifact: 15241837542
-            digest: ea8c0101f7765adcae58e43bd92a61246475f615493678b5ed9b2b6783edb120
-            score: 15241827474
-            score_digest: 3ebedaee3ceb04b83ed27d27ea37f510ac24fe93144c36996c6e0975dca68efd
-            gallery: 15241882357
-            gallery_digest: bc4ec7c587f4587b49846597c6f0361007e4dbdd5b7793071e67b19e66bb1fb4
+            artifact: 15243846823
+            digest: 0407c50a85a8bec3e7c526244de58169cd68892d94a706d8a6e37ca9d96a6993
+            score: 15243941614
+            score_digest: ced0cd11dd1d5a7aa0a2ef7d29dc85375b4118352315d23344d5523611a8d5d5
+            gallery: 15244186028
+            gallery_digest: 3fa960a1d7e4700dbd10395268843b01eb88af333cd76695982ceded27931fa0
             lattice: 0
             lattice_digest: none
+            sketch: 0
+            sketch_digest: none
           - instrument: xenoresonator
-            ref: f018269abdda85f76ab693f75036a9fcec5776d0
+            ref: c5df5924898aae7d9e23f717bc35990565fc2607
             os: windows-latest
-            artifact: 15241827500
-            digest: b94674bb61c9f8f490e2cfa85f2e06ea04f571ad0daf17d283acd06ebe0d2b19
-            score: 15241757882
-            score_digest: d823f351dc2ddb1c6de27b4ed0a933d415afd7b7a72e0db28e8ad055565271da
-            gallery: 15241897443
-            gallery_digest: 08db6d40c8fb62cb6334f68864f4f516762f16bd07da3a7f22750732ce400b6d
+            artifact: 15243951578
+            digest: dd8a1eaf5d86e2283305f126b8bb838dae633a36460d4ce3260194e9cb56d6b1
+            score: 15243896639
+            score_digest: b4e6f3acc7b87d8f58a9b10e2cf75fead5ecbd3f2f9344090521826f446a2d44
+            gallery: 15243956583
+            gallery_digest: 97dea2b688a83d07f9ae9b0542f0eedf3a83494e73a12e5cd4d90d39a3e2be68
             lattice: 0
             lattice_digest: none
+            sketch: 0
+            sketch_digest: none
           - instrument: chronomorph
-            ref: f4f20fb71e4e4ce7f62de3a41a586e01bd89de41
+            ref: 22fa62330836bff21f43f0c719c8d8206790fcda
             os: ubuntu-24.04
-            artifact: 15242082850
-            digest: 68f2b6345e1a534374c6d432a7267859c062be2fd8562a01dc42a0012d54e8d0
-            score: 15241813381
-            score_digest: 33315470cef68e3204b6f8b3a4403581799a088e5dc21cc7221e08e92188940d
+            artifact: 15243424407
+            digest: 4d0836711b75e07f4ac402b0e0e73332eee50cd34076ca4d85aa1c068de0489d
+            score: 15244370251
+            score_digest: 9ab6a5b8f50af510cb404d5eca254bd500f2cc637358bcba0765919f1e83e6e6
             gallery: 0
             gallery_digest: none
-            lattice: 15241668902
-            lattice_digest: 5023b757dcc377d2eda3748978b52b862fe5c45d89df6f45f6f602904f004c6c
+            lattice: 15244260570
+            lattice_digest: 86cda1313fa68064c2e8ff1735cd5540838e171c12388bf41b45c655c0c0d63d
+            sketch: 0
+            sketch_digest: none
           - instrument: chronomorph
-            ref: f4f20fb71e4e4ce7f62de3a41a586e01bd89de41
+            ref: 22fa62330836bff21f43f0c719c8d8206790fcda
             os: windows-latest
-            artifact: 15242275681
-            digest: db5f5cbed3abd1f0a3b15c4724c14e6cbe952910edc4902120ba28575be9cc61
-            score: 15242032789
-            score_digest: ee1426bc30827299d4409aa14668f017143154f12474c57182a91a861d9759f9
+            artifact: 15243589905
+            digest: cd5529f0de150dad396b67bd608d3b300650e04296872d9ed4c230f28efc74d9
+            score: 15244510416
+            score_digest: e639746856c3da6e868463fa0150097c64ceba6d5611ddd1e88df5cdebe3bd98
             gallery: 0
             gallery_digest: none
-            lattice: 15242192266
-            lattice_digest: bcb08a9592bab61180f3822a5026bccaef9cfe1abef2fbba4ce206bfd5abd4cb
+            lattice: 15244116833
+            lattice_digest: 28126fcb920a310e13f9833890c7aeef25a49b7ab8ab5149cc414a0b532b0ae6
+            sketch: 0
+            sketch_digest: none
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     defaults:
@@ -136,14 +152,16 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SCORE/zip" > score.zip
           fi
           if [ "$INSTRUMENT" = ecophon ]; then
-            python qualification/ecophon_archive.py frozen native.zip "$DIGEST" --successor | tee receipts/native.log
+            python qualification/ecophon_archive.py frozen native.zip "$DIGEST" --successor --live-arc | tee receipts/native.log
           elif [ "$INSTRUMENT" = grimoire ]; then
             python qualification/grimoire_archive.py frozen native.zip "$DIGEST" | tee receipts/native.log
           else
             python qualification/native_archive.py "$INSTRUMENT" frozen native.zip "$DIGEST" | tee receipts/native.log
           fi
           tail -n 1 receipts/native.log > receipts/native.json
-          python qualification/successor_scores.py "$INSTRUMENT" frozen native.zip "$DIGEST" score.zip "$SCORE_DIGEST" | tee receipts/score.log
+          extra=()
+          if [ "$INSTRUMENT" = ecophon ]; then extra+=(--live-arc); fi
+          python qualification/successor_scores.py "$INSTRUMENT" frozen native.zip "$DIGEST" score.zip "$SCORE_DIGEST" "${extra[@]}" | tee receipts/score.log
           tail -n 1 receipts/score.log > receipts/score.json
           python -c "import json; [json.load(open('receipts/'+n+'.json')) for n in ('native','score')]"
           git -C frozen rev-parse HEAD > receipts/source.txt
@@ -186,6 +204,30 @@ jobs:
           gcc "${flags[@]}" frozen/instruments/chronomorph/chrono.c frozen/instruments/chronomorph/live_bridge.c -o 'lattice fresh/core.dll'
           python frozen/instruments/chronomorph/lattice_variations.py 'lattice fresh/core.dll' 'lattice fresh'
           python qualification/verify_lattice.py 'lattice original' 'lattice fresh' > receipts/lattice.json
+      - name: Independently rebuild live Arc and sketch replay
+        if: matrix.instrument == 'ecophon' || matrix.instrument == 'grimoire'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTRUMENT: ${{ matrix.instrument }}
+          SKETCH: ${{ matrix.sketch }}
+          SKETCH_DIGEST: ${{ matrix.sketch_digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p 'fresh live replay'
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          if [ "$INSTRUMENT" = ecophon ]; then
+            gcc "${flags[@]}" frozen/instruments/ecophon/ecophon.c frozen/instruments/ecophon/fixture.c -o 'fresh core.dll'
+            python frozen/instruments/ecophon/live_arc_fixture.py 'fresh core.dll' 'fresh live replay'
+            python qualification/verify_live_replays.py ecophon native.zip 'fresh live replay' > receipts/live-replay.json
+          else
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$SKETCH/zip" > sketch.zip
+            python -c "import hashlib,sys; from pathlib import Path; assert hashlib.sha256(Path('sketch.zip').read_bytes()).hexdigest()==sys.argv[1]" "$SKETCH_DIGEST"
+            node --version
+            gcc "${flags[@]}" frozen/instruments/grimoire/orbit.c frozen/companion/grimoire/session.c -o 'fresh core.dll'
+            python frozen/companion/grimoire/sketch_replay.py 'fresh core.dll' 'fresh live replay'
+            python qualification/verify_live_replays.py grimoire sketch.zip 'fresh live replay' > receipts/live-replay.json
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
