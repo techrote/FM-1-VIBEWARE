@@ -1,7 +1,7 @@
 name: QA successor native archives and replay alignment
 on:
   pull_request:
-    paths: ['.github/workflows/qa-successor-native.yml','qualification/successor_scores.py','qualification/verify_replay.py']
+    paths: ['.github/workflows/qa-successor-native.yml','qualification/successor_scores.py','qualification/verify_replay.py','qualification/verify_patch_gallery.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,61 +13,77 @@ jobs:
       matrix:
         include:
           - instrument: ecophon
-            ref: 228784f3df8f3c18701ab484b60cd1a607d511c9
+            ref: 6c9a6b2fab84a6bfe12d80feff365235901cec3a
             os: ubuntu-24.04
-            artifact: 15237687217
-            digest: a465cb9c762f4f2d56bae5cc8252192e5954b8a1f196b1563dc6ea62398b0168
+            artifact: 15239703761
+            digest: fa333db4eb89de1d13b98609887aa8c6155c5115c76158c99e9b51efe098b59e
             score: 0
             score_digest: none
+            gallery: 0
+            gallery_digest: none
           - instrument: ecophon
-            ref: 228784f3df8f3c18701ab484b60cd1a607d511c9
+            ref: 6c9a6b2fab84a6bfe12d80feff365235901cec3a
             os: windows-latest
-            artifact: 15238145831
-            digest: ef28aaa1a06f375b5eacb686268dceecfed36974f99b82773f684bd2687952f0
+            artifact: 15240071594
+            digest: 7b1da307dd8c5d575a752aef7ced1582e21f7fa39f890e2fc48fc36461e46a23
             score: 0
             score_digest: none
+            gallery: 0
+            gallery_digest: none
           - instrument: grimoire
-            ref: 63ecfd1b3ee08988555397bd0673aec91a4cb4e7
+            ref: efcb924537eee3709d1954d02eff12c1c7e9df2f
             os: ubuntu-24.04
-            artifact: 15238851162
-            digest: 1a761adbed8f321c1c0135f1c7a0857c4b47488df3fb610558039f7ac1e8c2d9
-            score: 15238796164
-            score_digest: 94325b23ae332fb4bd3e41166e852c84ffacf8a0f35ef3b83605c7647c25a424
+            artifact: 15240153215
+            digest: 302440c23b53cb77f10db5bbadb934b8a676e56444bc0c3e87a04f52541e9fbe
+            score: 15239953845
+            score_digest: 2d864991baa26c1701d1d70e475554bd77824cf2178e415e5b45a96ebd80d8fa
+            gallery: 0
+            gallery_digest: none
           - instrument: grimoire
-            ref: 63ecfd1b3ee08988555397bd0673aec91a4cb4e7
+            ref: efcb924537eee3709d1954d02eff12c1c7e9df2f
             os: windows-latest
-            artifact: 15237793431
-            digest: 7c25f0f696645f7442adcc4bc74a2be8901c1463a4a6dcd32c02ef3e5982c3ea
-            score: 15237828243
-            score_digest: 36bfdd02083aade0dffe817e8507171e07657ca57f6d4323ab38bb0469b7d899
+            artifact: 15240398166
+            digest: 3d22376237df961a41b8b292cabd14aafd397de9d0e02341f6108656bc75e4d4
+            score: 15240632448
+            score_digest: 6b55712c804eb3094a14459b1cab71a59f51014c1ffca7d1c47fc01677fcc260
+            gallery: 0
+            gallery_digest: none
           - instrument: xenoresonator
-            ref: 5804ebb694fe9624f5d54edd51f54fad4c2332f8
+            ref: 87679d738d4a104a6ba62d53434736eebd19c603
             os: ubuntu-24.04
-            artifact: 15236948633
-            digest: 519935591d8cda51ff098e59acf41eb5442a3b0e0bdb0ad0fc90bb3b37a48a11
-            score: 15237083456
-            score_digest: 24a9ad68e70c1e13bf3703d5617ffef542737517cb40ce189891189458b02357
+            artifact: 15239880292
+            digest: ec66038f4cca5839c2f5ca2f843ba7cb78a1cb57084aafa9b5b85234601e4647
+            score: 15238764872
+            score_digest: 8880e5d60ae64cf89600dd5dd52f237eadf32838906bfb7daba1cb04313c1867
+            gallery: 15238919305
+            gallery_digest: 5454d732c6a2cd169ec9b626b3c678518202ad3840f0803069d0f944f094c6fa
           - instrument: xenoresonator
-            ref: 5804ebb694fe9624f5d54edd51f54fad4c2332f8
+            ref: 87679d738d4a104a6ba62d53434736eebd19c603
             os: windows-latest
-            artifact: 15237362337
-            digest: 4ddd84de0436ba9b9296bfbbd512a5330a18dafc0052124a666067d72bf2736f
-            score: 15237197580
-            score_digest: a0952ea3950d3087b6d4201cd8af98fdb4650dcb739d3edabd96c168ab5d64cd
+            artifact: 15239298001
+            digest: 0def589e5cbeeef84804a3f53f734fdfe68581014f46f56940d09837428ddae1
+            score: 15239462424
+            score_digest: 7bb6079d75e360ab7c793fdb3b9038d8e6d2c5a40442f2f3ead5fd0fc6b2e41c
+            gallery: 15239237817
+            gallery_digest: 27b6d0f2122ad155fa0395185ef77cf243b551285edc064d08f74f3b7c607e9c
           - instrument: chronomorph
-            ref: 7fa9a16b55b321a1a8b46e174ed15e927aeaece6
+            ref: f40de42e0973f6697e6d1f19c05ed3565dcbe09e
             os: ubuntu-24.04
-            artifact: 15236308947
-            digest: 31de5262e932283f28fea086f252c96876dc98173599e1eeb3552ee611199a9f
-            score: 15237192841
-            score_digest: 35dc71a5b2e0cd2c0b1b620749d62b044ec8340a0da04b3ac73e1da3e015fb0f
+            artifact: 15240150437
+            digest: 31c6dc310677d662c40c27f465de290abe14eb0ce4add5198ecdeb8de41e6f51
+            score: 15240110618
+            score_digest: 3f4bef824f11692bbd82bc956081f8de487c1a3b4b27811a1ce52061ada8a1cc
+            gallery: 0
+            gallery_digest: none
           - instrument: chronomorph
-            ref: 7fa9a16b55b321a1a8b46e174ed15e927aeaece6
+            ref: f40de42e0973f6697e6d1f19c05ed3565dcbe09e
             os: windows-latest
-            artifact: 15237532785
-            digest: 8dc9349bf5bdd8f8b27e6579fc9227257e4fae72f29302b0cd8fbb11724bf3f3
-            score: 15237164344
-            score_digest: 355d346a209bc51d7bdd2dd1f92536d55f616b0d2208a326860c48ba4ab500fe
+            artifact: 15239418502
+            digest: 7d70778ead11f29d4403f74f8c4012c437b8a4b3191797d6849e021a90b9c9fc
+            score: 15239134371
+            score_digest: e036246e195906832a2a0ececa9d519525b82a69736aaab5cb49ebc5907e96d2
+            gallery: 0
+            gallery_digest: none
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     defaults:
@@ -116,6 +132,26 @@ jobs:
           python -c "import json; [json.load(open('receipts/'+n+'.json')) for n in ('native','score')]"
           git -C frozen rev-parse HEAD > receipts/source.txt
           gcc --version > receipts/compiler.txt
+      - name: Independent factory-patch gallery replay and PCM inspection
+        if: matrix.instrument == 'xenoresonator'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GALLERY: ${{ matrix.gallery }}
+          DIGEST: ${{ matrix.gallery_digest }}
+          PIN: ${{ matrix.ref }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$GALLERY/zip" > gallery.zip
+          mkdir -p 'gallery original' 'gallery fresh'
+          python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract; extract(Path('gallery.zip'),Path('gallery original'),sys.argv[1])" "$DIGEST"
+          test "$(tr -d '\r\n' < 'gallery original/SOURCE-REVISION.txt')" = "$PIN"
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          gcc "${flags[@]}" frozen/instruments/xenoresonator/xeno.c frozen/instruments/xenoresonator/live_bridge.c -o 'gallery fresh/core.dll'
+          python frozen/instruments/xenoresonator/patch_gallery.py 'gallery fresh/core.dll' 'gallery fresh'
+          python qualification/verify_patch_gallery.py 'gallery original' > receipts/gallery.json
+          python qualification/verify_patch_gallery.py 'gallery fresh'
+          python -c "from pathlib import Path; a=Path('gallery original'); b=Path('gallery fresh'); files=sorted(a.glob('*.wav'))+[a/'receipt.json']; assert len(files)==9; assert all(p.read_bytes()==(b/p.name).read_bytes() for p in files)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
