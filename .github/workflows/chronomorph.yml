@@ -22,6 +22,13 @@ jobs:
         working-directory: instruments/chronomorph
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source revision
+        shell: bash
+        env:
+          EXPECTED_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test -n "$EXPECTED_REVISION" && test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -54,6 +61,18 @@ jobs:
           name: chronomorph-tidal-interlock-${{ runner.os }}
           path: instruments/chronomorph/tidal-evidence/
           if-no-files-found: error
+      - name: Lattice Variations actual-core score and matched pattern control
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then lib=chronomorph-live.dll; else lib=chronomorph-live.so; fi
+          python lattice_variations.py "$lib" lattice-evidence
+          python -c "import json,pathlib; r=json.loads(pathlib.Path('lattice-evidence/receipt.json').read_text()); a=r['arms']; assert a['lattice-variations']['wav_sha256']=='e2c5e05fbc69db587619926384aaf91667ae97b81d769f042a085d076c4b23ee'; assert a['fixed-pattern-control']['wav_sha256']=='5a64cdc1e882124f7e6da69669d4f6841b4a626627d0bd1135882d3434b2f42e'; assert a['lattice-variations']['trace_sha256']=='7fc36d71602bad954308c1b2049846e5712b6345d74d8a9761a1fcf31e56865f'; assert a['fixed-pattern-control']['trace_sha256']=='7659c7a226fa354a39d14dc7fe570515f28def484a1c524e62d6b1403db98dbc'"
+          cp lattice_variations.py lattice-evidence/
+          git rev-parse HEAD > lattice-evidence/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chronomorph-lattice-variations-${{ runner.os }}
+          path: instruments/chronomorph/lattice-evidence/
+          if-no-files-found: error
       - name: Linux UBSan
         if: runner.os == 'Linux'
         run: |
@@ -81,6 +100,13 @@ jobs:
         working-directory: instruments/chronomorph
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source revision
+        shell: bash
+        env:
+          EXPECTED_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test -n "$EXPECTED_REVISION" && test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
