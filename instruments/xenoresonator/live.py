@@ -22,6 +22,13 @@ class Session:
             fn.restype = None
         self.lib.live_block.argtypes = [C.c_uint]*7+[C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
         self.lib.live_block.restype = None
+        for name, args in [('clear', []), ('store', [C.c_uint]*5),
+                           ('capture', [C.c_uint]),
+                           ('read', [C.c_uint,C.POINTER(C.c_uint32)]),
+                           ('block', [C.c_uint]*2+[C.POINTER(C.c_int16),C.POINTER(C.c_uint32)])]:
+            fn = getattr(self.lib,'live_memory_'+name)
+            fn.argtypes = args
+            fn.restype = None if name == 'clear' else C.c_int
         self.token = None
         self.seq = 0
         self.deadline = 0
@@ -35,6 +42,41 @@ class Session:
         self.lib.live_panic()
         self.token = None
 
+    def patch(self,slot):
+        values = (C.c_uint32*4)()
+        return dict(zip(('p','e','d','c'),values)) if self.lib.live_memory_read(slot,values) else None
+
+    def committed(self,q,data):
+        self.seq += 1
+        self.deadline = time.monotonic()+LEASE
+        return 200,dict(data,seq=q['seq'])
+
+    def memory(self,path,q):
+        op = q.get('op')
+        fields = {'inspect':set(), 'clear':set(), 'capture':{'slot'},
+                  'store':{'slot','p','e','d','c'}} if path == '/memory' else {
+                  'recall':{'slot'}, 'morph':{'position'}}
+        if type(op) is not str or op not in fields or set(q) != fields[op]|{'token','seq','op'}:
+            return 400,{'error':'memory fields'}
+        bounds = dict(slot=(0,1),position=(0,127),**{k:LIMITS[k] for k in ('p','e','d','c')})
+        if any(type(q[k]) is not int or not bounds[k][0]<=q[k]<=bounds[k][1] for k in fields[op]):
+            return 400,{'error':'memory range'}
+        if path == '/memory':
+            if op == 'clear':
+                self.lib.live_memory_clear()
+            elif op == 'capture':
+                self.lib.live_memory_capture(q['slot'])
+            elif op == 'store':
+                self.lib.live_memory_store(*(q[k] for k in ('slot','p','e','d','c')))
+            return self.committed(q,{'slots':[self.patch(0),self.patch(1)],'patch':self.patch(2)})
+        pcm = (C.c_int16*FRAMES)()
+        levels = (C.c_uint32*6)()
+        args = (0,q['slot']) if op == 'recall' else (1,q['position'])
+        if not self.lib.live_memory_block(*args,pcm,levels):
+            return 400,{'error':'empty material memory'}
+        return self.committed(q,{'pcm':base64.b64encode(struct.pack('<1200h',*pcm)).decode('ascii'),
+                                 'levels':list(levels),'patch':self.patch(2)})
+
     def request(self,path,q):
         self.expire()
         if path == '/open':
@@ -45,7 +87,7 @@ class Session:
             self.seq = 0
             self.deadline = time.monotonic()+LEASE
             return 200,{'token':self.token,'rate':24000,'frames':FRAMES}
-        if path not in ('/block','/panic'):
+        if path not in ('/block','/panic','/memory','/memory-block'):
             return 404,{'error':'path'}
         if not self.token or q.get('token') != self.token:
             return 409,{'error':'stale session'}
@@ -54,6 +96,12 @@ class Session:
                 return 400,{'error':'panic fields'}
             self.panic()
             return 200,{'muted':True}
+        if path in ('/memory','/memory-block'):
+            if type(q.get('seq')) is not int:
+                return 400,{'error':'fields'}
+            if q['seq'] != self.seq:
+                return 409,{'error':'sequence'}
+            return self.memory(path,q)
         if set(q) != set(LIMITS)|{'token','seq'} or type(q.get('seq')) is not int:
             return 400,{'error':'fields'}
         if q['seq'] != self.seq:
