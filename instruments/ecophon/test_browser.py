@@ -89,19 +89,17 @@ with make_server(Path(sys.argv[1]),0) as server:
             # Record actual native step requests/responses without replacing the core.
             page.evaluate("""() => {
                 window.ecoWitness=[];
-                const original=post, originalControls=stepControls;
-                let arcBlock=null;
-                stepControls=()=>{
-                    arcBlock=cue?.id==="cueArc"?cue.block+1:null;
-                    return originalControls();
-                };
+                window.ecoArcStarts=[];
+                window.ecoCaptures=[];
+                const original=post;
                 post=async(path,data)=>{
-                    const block=path==='/step'?arcBlock:null;
                     const memory=path==='/memory/step'&&nativeRecall?.slot==="A"?nativeRecall.block+1:null;
                     const result=await original(path,data);
-                    if(path==='/step'||path==='/memory/step'){
+                    if(path==='/arc/start')window.ecoArcStarts.push(result);
+                    if(path==='/memory/capture')window.ecoCaptures.push(result);
+                    if(path==='/step'||path==='/memory/step'||path==='/arc/step'){
                         window.ecoWitness.push({path,controls:path==='/step'?[data.fertility,data.sharing,data.pressure,data.frozen]:[...result.controls,result.frozen],
-                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:[...result.controls,result.frozen],generation:result.generation,arcBlock:block,memoryBlock:memory});
+                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:[...result.controls,result.frozen],generation:result.generation,arcBlock:path==='/arc/step'?result.arc_block:null,arcRemaining:path==='/arc/step'?result.arc_remaining:null,memoryBlock:memory});
                         if(window.ecoWitness.length>256)window.ecoWitness.shift();
                     }
                     return result;
@@ -173,9 +171,19 @@ with make_server(Path(sys.argv[1]),0) as server:
             origin=tuple(page.evaluate("names.map(n=>+$(n).value)"))
             page.evaluate("window.ecoWitness=[]")
             page.click("#cueArc")
+            page.wait_for_function("window.ecoWitness.some(r=>r.arcBlock===3)")
+            page.click("#storeA")
+            page.wait_for_function("window.ecoCaptures.length===1")
             page.wait_for_function("window.ecoWitness.some(r=>r.arcBlock===240)",timeout=60000)
             rows=page.evaluate("window.ecoWitness.filter(r=>r.arcBlock!==null)")
+            starts=page.evaluate("window.ecoArcStarts")
+            assert len(starts)==1 and starts[0]["accepted"] and starts[0]["total_blocks"]==240
             assert [r["arcBlock"] for r in rows]==list(range(1,241))
+            assert all(r["path"]=="/arc/step" and r["arcRemaining"]==240-i for i,r in enumerate(rows,1))
+            captured=page.evaluate("window.ecoCaptures[0]")
+            assert captured["slot"]==0 and captured["generation"]==rows[0]["generation"]
+            assert captured["controls"] in [r["controls"][:3] for r in rows[:40]]
+            assert starts[0]["generation"]==rows[0]["generation"]
             for i,row in enumerate(rows,1):
                 expected=(*ramp(origin,BASE,i,40),0) if i<=40 else controls(i-1,"habitat-arc")
                 assert row["controls"]==row["echo"]==list(expected),(i,row,expected)
@@ -188,7 +196,7 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.locator("#sharing").focus()
             page.keyboard.press("Home")
             assert "Manual" in page.locator("#cueStatus").inner_text()
-            page.wait_for_function("window.ecoWitness.slice(-2).length===2 && window.ecoWitness.slice(-2).every(r=>r.arcBlock===null && r.controls[1]===0)")
+            page.wait_for_function("window.ecoWitness.slice(-2).length===2 && window.ecoWitness.slice(-2).every(r=>r.path==='/step' && r.arcBlock===null && r.controls[1]===0)")
             # User environment memory: two independent slots, exact native
             # ramp, snapshot isolation during capture, no habitat reset.
             def set_environment(keys):
@@ -243,7 +251,7 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.wait_for_function("window.ecoRms()<0.000001")
             assert not errors,errors
             browser.close()
-            print("PASS Chromium native audio graph, XY gesture, regime reset, panic, fault, reconnect and actual-state population feedback/manual override and whole Habitat Arc 240-block playback")
+            print("PASS Chromium native audio graph, XY gesture, regime reset, panic, fault, reconnect and actual-state population feedback/manual override and native Habitat Arc 240-block playback with capture")
     finally:
         server.shutdown()
         worker.join()
