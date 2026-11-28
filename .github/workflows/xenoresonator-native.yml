@@ -44,6 +44,9 @@ jobs:
           ./test.exe
           gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c test_material_memory.c -o material-memory.exe
           ./material-memory.exe
+          gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c test_sample_morph.c -o sample-morph.exe
+          ./sample-morph.exe
+          gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c morph_demo.c -o morph-demo.exe
           gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c render.c -o render.exe
           python test_http.py ./render.exe
           gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC xeno.c live_bridge.c -o live.dll
@@ -97,10 +100,13 @@ jobs:
       - name: Create audition package and PCM receipts
         run: |
           mkdir -p 'audition package'
-          cp render.exe audition.py test_http.py README.md profile.json xeno.c xeno.h test.c material_memory.h test_material_memory.c test_memory_consumer.py render.c live.dll live.py live.html live_bridge.c test_live.py test_browser.py 'audition package/'
+          cp sample-morph.exe morph-demo.exe sample_morph.h test_sample_morph.c morph_demo.c render.exe audition.py test_http.py README.md profile.json xeno.c xeno.h test.c material_memory.h test_material_memory.c test_memory_consumer.py render.c live.dll live.py live.html live_bridge.c test_live.py test_browser.py 'audition package/'
           for p in 0 1 2 3; do ./render.exe "audition package/material$p.wav" "$p" 76 12 90 48 110 phrase; done
           ./render.exe 'audition package/uncoupled.wav' 2 76 12 0 48 110 phrase
           cd 'audition package'
+          ./sample-morph.exe
+          ./morph-demo.exe morph-fixed.wav morph-forward.wav morph-reverse.wav
+          python -c "import hashlib,pathlib; expected={'morph-fixed.wav':'3986e873114b6efbe4ee1c65d6eb26aa98dba3fc15f035ad08a857689a5bdd66','morph-forward.wav':'6601e8b146b042f44f733834936a270533d7a465740e033499d0dada79625b79','morph-reverse.wav':'8ac386e70ef7894c9a67e40aaed458b83e110d5619ba1bd4cd2051788739bd3a'}; assert all(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()==h for p,h in expected.items())"
           python -c "import wave,glob,hashlib; print('\n'.join(p+' '+hashlib.sha256(wave.open(p).readframes(144000)).hexdigest() for p in sorted(glob.glob('*.wav'))))" > PCM-SHA256.txt
           python test_http.py ./render.exe
           python test_live.py ./live.dll

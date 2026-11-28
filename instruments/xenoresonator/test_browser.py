@@ -214,6 +214,14 @@ try:
         print('PASS factory patches, actual keyboard recall, macro bounds/repeat and no synthetic strike/release')
 
         # User material exchange never acts as a note event. Import is slot-only.
+        def memory_response(action,op,**fields):
+            with page.expect_response(lambda r:r.url==url+'/memory-block' and r.ok and
+                    r.request.post_data_json.get('op')==op and
+                    all(r.request.post_data_json.get(k)==v for k,v in fields.items())) as witness:
+                action()
+            data=witness.value.json()
+            assert len(base64.b64decode(data['pcm'],validate=True))==2400
+            return data
         page.locator('summary').click()
         page.click('#user-capture')
         captured=page.input_value('#user-doc')
@@ -231,14 +239,14 @@ try:
         page.locator('#strike').focus()
         start=len(requests)
         pitched('z',72)
-        with page.expect_response(lambda r:r.url==url+'/block' and r.ok and
-                r.request.post_data_json['event']==0 and
-                all(r.request.post_data_json[k]==v for k,v in dict(p=2,e=93,d=17,c=110).items())) as witness:
-            page.keyboard.press('7')
-        assert any(base64.b64decode(witness.value.json()['pcm'],validate=True))
+        data=memory_response(lambda:page.keyboard.press('7'),'recall',slot=0)
+        assert data['patch']==dict(p=2,e=93,d=17,c=110)
+        assert any(base64.b64decode(data['pcm'],validate=True))
+        wait("$('user-status').textContent==='User material recalled'")
         assert page.evaluate("heldKey==='KeyZ' && document.activeElement===strike")
         assert page.input_value('#patch')==''
-        page.keyboard.down('7')
+        memory_response(lambda:page.keyboard.down('7'),'recall',slot=0)
+        wait("$('user-status').textContent==='User material recalled'")
         page.keyboard.press('ArrowRight')
         page.keyboard.down('7')
         page.keyboard.up('7')
@@ -261,18 +269,17 @@ try:
         page.click('#morph-b-import')
         assert page.locator('#morph-b-status').inner_text().startswith('Rejected')
         assert page.evaluate("morphB.p===3 && userPatch.p===0")
-        page.locator('#morph').fill('56')
-        assert page.evaluate("Number($('p').value)===0 && Number($('e').value)===56")
+        data=memory_response(lambda:page.locator('#morph').fill('56'),'morph',position=56)
+        assert data['patch']==dict(p=0,e=56,d=71,c=56)
+        wait("Number($('p').value)===0 && Number($('e').value)===56")
         page.locator('#strike').focus()
         start=len(requests)
         pitched('z',72)
         def morph_key(key,position,material):
             expected=dict(p=material,e=position,d=127-position,c=position)
-            with page.expect_response(lambda r:r.url==url+'/block' and r.ok and
-                    r.request.post_data_json['event']==0 and
-                    all(r.request.post_data_json[k]==v for k,v in expected.items())) as witness:
-                page.keyboard.press(key)
-            assert len(base64.b64decode(witness.value.json()['pcm'],validate=True))==2400
+            data=memory_response(lambda:page.keyboard.press(key),'morph',position=position)
+            assert data['patch']==expected
+            wait(f"$('morph-status').textContent.startsWith('Native morph {position}/127')")
             assert page.evaluate("heldKey==='KeyZ' && document.activeElement===strike")
             assert int(page.input_value('#morph'))==position
             assert page.input_value('#patch')==''
@@ -283,6 +290,39 @@ try:
         assert [q['event'] for q in requests[start:] if q['event']]==[1,2]
         print('PASS material A/B import isolation, midpoint switch, held keyboard morph and native block response')
 
+        # Delay delivery of an actual native response, then supersede it manually.
+        page.evaluate('''() => {
+          const orig=window.fetch;
+          window.fetch=async (...args)=>{
+            const result=await orig(...args);
+            if(args[0]==='/memory-block' && !window.delaySeen){
+              window.delaySeen=true;
+              await new Promise(resolve=>window.releaseMemory=resolve);
+            }
+            return result;
+          };
+        }''')
+        page.locator('#strike').focus()
+        page.keyboard.press('8')
+        wait('window.delaySeen && typeof window.releaseMemory==="function"')
+        page.keyboard.press('ArrowRight')
+        edited=int(page.input_value('#e'))
+        assert edited==68
+        page.evaluate('window.releaseMemory()')
+        with page.expect_request(lambda req:req.url==url+'/block' and req.method=='POST'
+                and req.post_data_json['e']==edited):
+            pass
+        assert int(page.input_value('#e'))==edited
+        # Reload retains server-owned slots, without applying them to new controls.
+        page.click('#stop')
+        silent()
+        page.reload()
+        page.click('#start')
+        wait('active && seq>=2')
+        assert page.evaluate('userPatch.p===0 && morphB.p===3')
+        assert page.evaluate("Number($('p').value)===0 && Number($('e').value)===76")
+        print('PASS native response supersession and server-owned slot reload without recall')
+
         # Fail a real request while the engine is active, then reconnect.
         page.route('**/block',lambda route:route.abort())
         wait("document.querySelector('#status').textContent.startsWith('Connection lost')")
@@ -292,9 +332,99 @@ try:
         page.locator('#strike').hover()
         gesture(page.mouse.down,1)
         wait("window.xenoProbe.peak>0.0001 && window.xenoProbe.bodyB>0")
+        # A native response may be received but never delivered to the pump.
+        # This deliberately withholds the real response even after fetch aborts.
+        # The request deadline must mute the held note and quarantine the late
+        # response, including across a new session.
+        old_token=page.evaluate('token')
+        page.evaluate('''() => {
+          const original=window.fetch;
+          window.fetch=async (...args)=>{
+            const response=await original(...args);
+            if(args[0]==='/block' && !window.releaseStalled){
+              await new Promise(resolve=>window.releaseStalled=resolve);
+            }
+            return response;
+          };
+        }''')
+        wait('typeof window.releaseStalled==="function"')
+        with page.expect_response(lambda r:r.url==url+'/panic' and
+                r.request.method=='POST' and r.request.post_data_json['token']==old_token) as panic:
+            wait("$('status').textContent.includes('Request deadline exceeded')")
+        assert (panic.value.status==200 and panic.value.json()['muted'] is True) or (
+            panic.value.status==409 and panic.value.json()['error']=='stale session')
+        silent()
+        assert page.evaluate('pointer===null && heldKey===null && memoryJobs.length===0')
+        page.mouse.up()
+        stale=page.request.post(url+'/block',data={'token':old_token,'seq':0})
+        assert stale.status==409 and stale.json()['error']=='stale session'
+        fresh(90)
+        assert page.evaluate('token')!=old_token
+        current_seq=page.evaluate('seq')
+        page.evaluate('window.releaseStalled()')
+        wait(f'active && seq>={current_seq+4}')
+        wait('window.xenoProbe.rms<0.000001')
+        assert page.evaluate('window.xenoProbe.peak<0.000001 && pointer===null && heldKey===null')
+        page.locator('#strike').hover()
+        gesture(page.mouse.down,1)
+        wait("window.xenoProbe.peak>0.0001 && window.xenoProbe.bodyB>0")
         gesture(page.mouse.up,2)
         page.click('#stop')
         silent()
+        print('PASS held-note deadline, native panic/stale session, late response quarantine and actual audio recovery')
+        # Corrupt actual completed native receipts, one per live session.
+        # A rejected receipt must not schedule even one extra AudioBufferSource.
+        for path,field,value,message in [('/block','levels',None,'Modal receipt'),
+                    ('/block','levels',[0,0,131071,0,0,0],'Modal receipt'),
+                    ('/block','pcm','?'*3200,'PCM format'),
+                    ('/memory-block','patch',{'p':4,'e':1,'d':2,'c':3},'Material readback')]:
+            fresh(90)
+            page.locator('#strike').hover()
+            gesture(page.mouse.down,1)
+            wait("window.xenoProbe.peak>0.0001 && window.xenoProbe.bodyB>0")
+            old_token=page.evaluate('token')
+            with page.expect_response(lambda r:r.url==url+'/panic' and
+                    r.request.method=='POST' and r.request.post_data_json['token']==old_token) as panic:
+                page.evaluate("""([path,field,value]) => {
+                  const original=window.fetch;
+                  window.badReceiptScheduled=0;
+                  const create=AudioContext.prototype.createBufferSource;
+                  AudioContext.prototype.createBufferSource=function(...args){
+                    if(window.badReceiptDelivered)window.badReceiptScheduled++;
+                    return create.apply(this,args);
+                  };
+                  window.fetch=async (...args)=>{
+                    const response=await original(...args);
+                    if(args[0]!==path)return response;
+                    window.fetch=original;
+                    const data=await response.json();
+                    data[field]=value;
+                    window.badReceiptDelivered=true;
+                    return {ok:true,json:async()=>data};
+                  };
+                  window.restoreReceiptProbe=()=>{
+                    AudioContext.prototype.createBufferSource=create;
+                    window.badReceiptDelivered=false;
+                  };
+                }""",[path,field,value])
+                if path=="/memory-block":
+                    page.keyboard.press("7")
+                wait(f"$('status').textContent.includes('{message}') && !active")
+            assert panic.value.ok and panic.value.json()['muted'] is True
+            silent()
+            assert page.evaluate('window.badReceiptScheduled===0 && pointer===null && heldKey===null')
+            page.evaluate('window.restoreReceiptProbe()')
+            page.mouse.up()
+            stale=page.request.post(url+'/block',data={'token':old_token,'seq':0})
+            assert stale.status==409 and stale.json()['error']=='stale session'
+        fresh(90)
+        page.locator('#strike').hover()
+        gesture(page.mouse.down,1)
+        wait("window.xenoProbe.peak>0.0001 && window.xenoProbe.bodyB>0")
+        gesture(page.mouse.up,2)
+        page.click('#stop')
+        silent()
+        print('PASS malformed native modal/PCM/material receipts fail closed before audio scheduling and recover')
         assert not errors,errors
         print('PASS Chromium actual audio, modal coupling, XY, input ownership, panic, fault and reconnect',coupled)
         browser.close()

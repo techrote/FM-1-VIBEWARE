@@ -25,10 +25,9 @@ def morph(a, b, pos):
             *((x*(127-pos)+y*pos+63)//127 for x,y in zip(a[1:], b[1:])))
 
 
-def check_page(page):
-    # Execute the exact browser mapping with minimal DOM stubs; no browser/audio claim.
-    source = page.read_text(encoding='utf-8')
-    fn = source[source.index('function applyMorph('):source.index("$('morph').oninput=")]
+def check_page(lib):
+    # Frozen predecessor page mapping: preserve the original comparison receipt.
+    fn = "function applyMorph(position){\n  if(!userPatch||!morphB||!Number.isInteger(position)||position<0||position>127)return false;\n  const values={p:position<64?userPatch.p:morphB.p};\n  for(const k of ['e','d','c'])values[k]=Math.floor((userPatch[k]*(127-position)+morphB[k]*position+63)/127);\n  for(const k of userKeys)$(k).value=values[k];\n  $('morph').value=position;customPatch();dot();\n  $('morph-status').textContent='Morph requested '+position+'/127 — manual edits may supersede';\n  return true;\n}\n"
     script = '''const pairs=JSON.parse(process.argv[1]);
 const userKeys=['p','e','d','c'], dom={};
 const $=k=>dom[k]??=( {} );
@@ -41,6 +40,25 @@ for(let p=0;p<128;p++){if(!applyMorph(p))throw Error('reject');rows.push(userKey
 console.log(JSON.stringify(rows));'''
     actual = json.loads(subprocess.check_output(['node','-e',script,json.dumps(PAIRS)], text=True))
     assert actual == [list(morph(a,b,p)) for a,b in PAIRS for p in range(128)]
+    # Also prove the current native memory mapping against all historical rows.
+    lib.live_memory_store.argtypes = [C.c_uint]*5
+    lib.live_memory_store.restype = C.c_int
+    lib.live_memory_block.argtypes = [C.c_uint]*2+[C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
+    lib.live_memory_block.restype = C.c_int
+    lib.live_memory_read.argtypes = [C.c_uint,C.POINTER(C.c_uint32)]
+    lib.live_memory_read.restype = C.c_int
+    lib.live_reset.argtypes,lib.live_reset.restype = [],None
+    lib.live_memory_clear.argtypes,lib.live_memory_clear.restype = [],None
+    pcm,levels,patch = (C.c_int16*BLOCK)(),(C.c_uint32*6)(),(C.c_uint32*4)()
+    rows=[]
+    for a,b in PAIRS:
+        lib.live_reset()
+        assert lib.live_memory_store(0,*a) and lib.live_memory_store(1,*b)
+        for pos in range(128):
+            assert lib.live_memory_block(1,pos,pcm,levels) and lib.live_memory_read(2,patch)
+            rows.append(list(patch))
+    assert rows == actual
+    lib.live_memory_clear()
     return len(actual)
 
 
@@ -82,8 +100,8 @@ def render(lib, arm):
 
 
 def main():
-    page_rows = check_page(Path(__file__).with_name('live.html'))
     lib = C.CDLL(str(Path(sys.argv[1]).resolve(strict=True)))
+    page_rows = check_page(lib)
     for fn in (lib.live_reset,lib.live_panic):
         fn.argtypes,fn.restype = [],None
     lib.live_block.argtypes = [C.c_uint]*7+[C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
@@ -129,7 +147,7 @@ def main():
         receipt['results'][arm]=dict(pcm_sha256=hashlib.sha256(pcm).hexdigest(),
                                     peak=max(t['peak'] for t in trace),trace=trace)
     (out/'receipt.json').write_bytes((json.dumps(receipt,sort_keys=True,separators=(',',':'))+'\n').encode())
-    print('PASS',page_rows,'actual page mapping rows; four native arms; exact repeat and panic tail')
+    print('PASS',page_rows,'historical page/native memory mapping rows; four native arms; exact repeat and panic tail')
     for arm,data in receipt['results'].items():
         print(arm,data['peak'],data['pcm_sha256'])
 

@@ -9,19 +9,39 @@
 <p><small>Chromatic keys: focus Hold to strike (automatically focused after Start audio). Z S X D C V G B H N J M , = C through C. One held note at a time; release before the next note. While focused here, 1–6 recall factory patches, arrow keys adjust excitation/damping, and [ / ] adjust coupling; 7 recalls user material A; 8 / 9 step the A/B morph toward A / B. These controls do not release the note.</small></p>
 <label>Keyboard octave <select id="octave"><option value="36">C2–C3</option><option value="48" selected>C3–C4</option><option value="60">C4–C5</option><option value="72">C5–C6</option></select></label>
 <label>Factory patch <select id="patch"><option value="">Custom controls</option></select></label><small>Changes material, excitation, damping and coupling together; does not strike or reset. Note and velocity stay unchanged. With Hold to strike focused, use 1–6 in the listed order to switch patches without releasing a held key.</small>
-<details><summary>User material A and A/B morph</summary><p><small>Capture current material and macros, or import a bounded local JSON document. Import changes only the slot; Recall (or 7 while playing) applies it without a new strike. Copy the document to retain it between page reloads. No device transport.</small></p><label>Material document <textarea id="user-doc" rows="4" maxlength="256" style="width:100%;box-sizing:border-box;font:inherit"></textarea></label><button id="user-capture" type="button">Capture controls</button> <button id="user-import" type="button">Import to slot</button> <button id="user-recall" type="button" disabled>Recall slot</button><p id="user-status" role="status">Slot empty</p>
+<details><summary>User material A and A/B morph</summary><p><small>Capture current material and macros, or import a bounded local JSON document. Import changes only the slot; Recall (or 7 while playing) applies it without a new strike. Start audio to edit native slots. Slots survive reconnects and reloads while the local server runs; copy JSON for durable storage. No device transport.</small></p><label>Material document <textarea id="user-doc" rows="4" maxlength="256" style="width:100%;box-sizing:border-box;font:inherit"></textarea></label><button id="user-capture" type="button">Capture controls</button> <button id="user-import" type="button">Import to slot</button> <button id="user-recall" type="button" disabled>Recall slot</button><p id="user-status" role="status">Slot empty</p>
 <label>Material B document <textarea id="morph-b-doc" rows="4" maxlength="256" style="width:100%;box-sizing:border-box;font:inherit"></textarea></label><button id="morph-b-capture" type="button">Capture B controls</button> <button id="morph-b-import" type="button">Import B</button><p id="morph-b-status" role="status">B empty</p>
-<label>A/B morph (last requested position) <input type="range" id="morph" min="0" max="127" value="0" disabled></label><p id="morph-status" role="status">Capture or import both endpoints</p><small>Explicit morph requests blend excitation, damping and coupling; material switches at position 64 (not continuous physical material interpolation). Keys 8 / 9 move eight steps while Hold to strike is focused. Capturing or importing either endpoint does not apply it. Manual edits can change controls after a morph; reconnect never recalls endpoints automatically. Page-local only.</small></details>
+<label>A/B morph (last requested position) <input type="range" id="morph" min="0" max="127" value="0" disabled></label><p id="morph-status" role="status">Capture or import both endpoints</p><small>Explicit morph requests blend excitation, damping and coupling; material switches at position 64 (not continuous physical material interpolation). Keys 8 / 9 move eight steps while Hold to strike is focused. Capturing or importing either endpoint does not apply it. Manual edits can change controls after a morph; reconnect never recalls endpoints automatically. Local native memory only; not device telemetry.</small></details>
 <script type="application/json" id="patch-data">[{"id":"ceramic-chime","name":"Ceramic chime","p":0,"e":54,"d":0,"c":100},{"id":"ceramic-click","name":"Ceramic click","p":0,"e":115,"d":92,"c":12},{"id":"woodglass-pluck","name":"Woodglass pluck","p":1,"e":48,"d":24,"c":65},{"id":"alien-bell","name":"Alien bell","p":2,"e":105,"d":0,"c":100},{"id":"alien-scrape","name":"Alien scrape","p":2,"e":127,"d":42,"c":14},{"id":"membrane-pulse","name":"Membrane pulse","p":3,"e":118,"d":9,"c":80}]</script>
 <p id="status" role="status">Stopped</p><div id="modes" aria-hidden="true"><div></div><div></div><div></div><div></div><div></div><div></div></div><p><small>Body A (teal), body B (ochre): actual local modal magnitude proxies sampled within each audio block. Not device telemetry. XY and material changes affect the live decay. No MIDI or device connection.</small></p>
 <script>
 const $=id=>document.getElementById(id), bars=[...$('modes').children];
 let ctx,token=null,epoch=0,seq=0,next=0,opening=false,active=false,events=[],visuals=[],sources=new Set(),gaps=0;
+let memoryJobs=[],controlRevision=0;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-async function post(path,q){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q)});if(!r.ok)throw Error('HTTP '+r.status);return r.json();}
+const REQUEST_DEADLINE_MS=1200;
+async function post(path,q){
+  const controller=new AbortController();let timer;
+  try{
+    const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>{
+      reject(Error('Request deadline exceeded'));controller.abort();
+    },REQUEST_DEADLINE_MS);});
+    const request=(async()=>{
+      const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(q),signal:controller.signal});
+      if(!r.ok)throw Error('HTTP '+r.status);
+      return r.json();
+    })();
+    return await Promise.race([request,deadline]);
+  }finally{clearTimeout(timer);}
+}
+function validateAudioReceipt(r,hasPatch){
+  if(!r||typeof r.pcm!=='string'||r.pcm.length!==3200||/[^A-Za-z0-9+/]/.test(r.pcm))throw Error('PCM format');
+  if(!Array.isArray(r.levels)||r.levels.length!==6||r.levels.some(n=>!Number.isInteger(n)||n<0||n>131070))throw Error('Modal receipt');
+  if(hasPatch&&!validPatch(r.patch))throw Error('Material readback');
+}
 function paint(levels){bars.forEach((b,i)=>b.style.height=Math.min(100,100*Math.sqrt(levels[i]/131070))+'%');}
 function stop(reason='Stopped'){
-  epoch++; active=false;pointer=null;heldKey=null;events=[];visuals=[];for(const s of sources){try{s.stop();}catch{}}sources.clear();paint([0,0,0,0,0,0]);
+  epoch++; active=false;pointer=null;heldKey=null;events=[];memoryJobs=[];visuals=[];refreshMorph();for(const s of sources){try{s.stop();}catch{}}sources.clear();paint([0,0,0,0,0,0]);
   const old=token;token=null;if(old)post('/panic',{token:old}).catch(()=>{});
   $('strike').disabled=true;$('start').disabled=opening;$('status').textContent=reason;
 }
@@ -30,12 +50,35 @@ function queue(event){if(!active)return;if(events.length>=8){stop('Gesture overf
 async function start(){if(opening||active)return;opening=true;$('start').disabled=true;const g=++epoch;
   try{ctx??=new AudioContext();await ctx.resume();const opened=await post('/open',{version:1});
     if(g!==epoch){await post('/panic',{token:opened.token}).catch(()=>{});return;}
-    token=opened.token;seq=0;gaps=0;next=ctx.currentTime+.08;active=true;$('strike').disabled=false;$('strike').focus();$('status').textContent='Live';pump(g);
+    token=opened.token;seq=0;gaps=0;
+    const memory=await post('/memory',{token,seq,op:'inspect'});
+    if(g!==epoch)return;if(memory.seq!==seq++)throw Error('Sequence mismatch');
+    syncSlots(memory.slots);next=ctx.currentTime+.08;active=true;refreshMorph();$('strike').disabled=false;$('strike').focus();$('status').textContent='Live';pump(g);
   }catch(e){if(g===epoch)stop(String(e));}finally{opening=false;$('start').disabled=active;}}
 async function pump(g){try{while(active&&epoch===g){
   if(next-ctx.currentTime>.10){await sleep(10);continue;}
-  const q={token,seq};for(const k of ['p','e','d','c','n','v'])q[k]=Number($(k).value);Object.assign(q,events.shift()||{event:0});
-  const r=await post('/block',q);if(!active||epoch!==g)return;if(r.seq!==seq++)throw Error('Sequence mismatch');
+  // All memory and note requests share the audio pump's session sequence.
+  // Prioritize note ownership (especially release) over optional memory edits.
+  const job=events.length?null:memoryJobs.shift();
+  if(job&&job.render&&job.revision!==controlRevision)continue;
+  const q={token,seq};let path='/block';
+  if(job){path=job.render?'/memory-block':'/memory';Object.assign(q,job.args);}
+  else{for(const k of ['p','e','d','c','n','v'])q[k]=Number($(k).value);Object.assign(q,events.shift()||{event:0});}
+  const r=await post(path,q);if(!active||epoch!==g)return;if(r.seq!==seq++)throw Error('Sequence mismatch');
+  if(job&&!job.render){
+    // A later edit may already be staged locally; verify only this operation.
+    if(!userKeys.every(k=>r.slots[job.args.slot]?.[k]===job.args[k]))throw Error('Material store mismatch');
+    const current=job.args.slot===0?userPatch:morphB,id=job.args.slot===0?'user-status':'morph-b-status';
+    if(userKeys.every(k=>current?.[k]===job.args[k])&&$(id).textContent.startsWith('Store pending'))$(id).textContent='Native slot ready — apply explicitly';
+    continue;
+  }
+  // Validate all render receipts before changing UI or scheduling audio, even when a newer manual edit superseded readback.
+  validateAudioReceipt(r,Boolean(job));
+  if(job&&job.revision===controlRevision){
+    for(const k of userKeys)$(k).value=r.patch[k];patchPicker.value='';dot();
+    if(job.args.op==='recall')$('user-status').textContent='User material recalled';
+    else $('morph-status').textContent='Native morph '+job.args.position+'/127 — manual edits may supersede';
+  }
   const bytes=Uint8Array.from(atob(r.pcm),c=>c.charCodeAt(0));if(bytes.length!==2400)throw Error('PCM size');
   const dv=new DataView(bytes.buffer),buffer=ctx.createBuffer(1,1200,24000),out=buffer.getChannelData(0);for(let i=0;i<1200;i++)out[i]=dv.getInt16(2*i,true)/32768;
   if(next<ctx.currentTime){gaps++;next=ctx.currentTime+.02;}
@@ -60,16 +103,36 @@ strike.onblur=releaseKey;
 function dot(){$('dot').style.left=Number($('e').value)/127*100+'%';$('dot').style.top=(1-Number($('d').value)/127)*100+'%';}dot();
 const patchPicker=$('patch'),patches=JSON.parse($('patch-data').textContent);
 for(const patch of patches)patchPicker.add(new Option(patch.name,patch.id));
-function customPatch(){patchPicker.value='';}
+function manualEdit(){
+  controlRevision++;memoryJobs=memoryJobs.filter(j=>!j.render);
+  if($('user-status').textContent==='Native recall pending')$('user-status').textContent='Recall superseded';
+  if($('morph-status').textContent.startsWith('Native morph pending'))$('morph-status').textContent='Morph superseded';
+}
+function customPatch(){manualEdit();patchPicker.value='';}
 function applyPatch(patch){
   if(!patch)return;
-  patchPicker.value=patch.id;
+  manualEdit();patchPicker.value=patch.id;
   for(const k of ['p','e','d','c'])$(k).value=patch[k];
   dot();
 }
 patchPicker.onchange=()=>applyPatch(patches.find(p=>p.id===patchPicker.value));
 const userSchema='xenoresonator.material/1', userKeys=['p','e','d','c'];
 let userPatch=null,morphB=null;
+function validPatch(q){return q&&typeof q==='object'&&userKeys.every(k=>Number.isInteger(q[k])&&q[k]>=0&&q[k]<=(k==='p'?3:127));}
+function enqueueMemory(args,render=false){
+  if(!active)return false;
+  if(render){manualEdit();}
+  if(memoryJobs.length>=8){stop('Material command overflow — muted');return false;}
+  memoryJobs.push({args,render,revision:controlRevision});return true;
+}
+function syncSlots(slots){
+  if(!Array.isArray(slots)||slots.length!==2||slots.some(q=>q!==null&&!validPatch(q)))throw Error('Material slots');
+  [userPatch,morphB]=slots;
+  for(const [patch,doc,status] of [[userPatch,'user-doc','user-status'],[morphB,'morph-b-doc','morph-b-status']]){
+    $(doc).value=patch?JSON.stringify({schema:userSchema,...patch}):'';
+    $(status).textContent=patch?'Native slot ready — apply explicitly':'Slot empty';
+  }
+}
 function parseUserPatch(raw){
   if(typeof raw!=='string'||raw.length>256)throw Error('Document size');
   const q=JSON.parse(raw);
@@ -79,17 +142,16 @@ function parseUserPatch(raw){
   return Object.fromEntries(userKeys.map(k=>[k,q[k]]));
 }
 function storeUserPatch(patch){
+  if(!enqueueMemory({op:'store',slot:0,...patch}))return;
   userPatch=patch;
   $('user-doc').value=JSON.stringify({schema:userSchema,...patch});
   $('user-recall').disabled=false;
-  $('user-status').textContent='Slot ready — recall explicitly';
+  $('user-status').textContent='Store pending — recall explicitly';
   refreshMorph();
 }
 function recallUserPatch(){
-  if(!userPatch)return;
-  for(const k of userKeys)$(k).value=userPatch[k];
-  customPatch();dot();
-  $('user-status').textContent='User material recalled';
+  if(!userPatch||!enqueueMemory({op:'recall',slot:0},true))return;
+  $('user-status').textContent='Native recall pending';
 }
 $('user-capture').onclick=()=>storeUserPatch(Object.fromEntries(userKeys.map(k=>[k,Number($(k).value)])));
 $('user-import').onclick=()=>{
@@ -98,13 +160,16 @@ $('user-import').onclick=()=>{
 };
 $('user-recall').onclick=recallUserPatch;
 function refreshMorph(){
-  $('morph').disabled=!(userPatch&&morphB);
-  $('morph-status').textContent=$('morph').disabled?'Capture or import both endpoints':'Endpoints ready — move morph explicitly';
+  for(const id of ['user-capture','user-import','morph-b-capture','morph-b-import'])$(id).disabled=!active;
+  $('user-recall').disabled=!(active&&userPatch);
+  $('morph').disabled=!(active&&userPatch&&morphB);
+  $('morph-status').textContent=!active?'Start audio to inspect native slots':$('morph').disabled?'Capture or import both endpoints':'Endpoints ready — move morph explicitly';
 }
 function storeMorphB(patch){
+  if(!enqueueMemory({op:'store',slot:1,...patch}))return;
   morphB=patch;
   $('morph-b-doc').value=JSON.stringify({schema:userSchema,...patch});
-  $('morph-b-status').textContent='B ready — move morph explicitly';
+  $('morph-b-status').textContent='Store pending — move morph explicitly';
   refreshMorph();
 }
 $('morph-b-capture').onclick=()=>storeMorphB(Object.fromEntries(userKeys.map(k=>[k,Number($(k).value)])));
@@ -114,11 +179,9 @@ $('morph-b-import').onclick=()=>{
 };
 function applyMorph(position){
   if(!userPatch||!morphB||!Number.isInteger(position)||position<0||position>127)return false;
-  const values={p:position<64?userPatch.p:morphB.p};
-  for(const k of ['e','d','c'])values[k]=Math.floor((userPatch[k]*(127-position)+morphB[k]*position+63)/127);
-  for(const k of userKeys)$(k).value=values[k];
-  $('morph').value=position;customPatch();dot();
-  $('morph-status').textContent='Morph requested '+position+'/127 — manual edits may supersede';
+  if(!enqueueMemory({op:'morph',position},true))return false;
+  $('morph').value=position;
+  $('morph-status').textContent='Native morph pending '+position+'/127';
   return true;
 }
 $('morph').oninput=()=>applyMorph(Number($('morph').value));
@@ -144,5 +207,6 @@ $('p').onchange=customPatch;$('c').oninput=customPatch;
 $('e').oninput=$('d').oninput=()=>{customPatch();dot();};
 function xy(e){const r=$('xy').getBoundingClientRect(),clamp=v=>Math.max(0,Math.min(127,Math.round(v*127)));$('e').value=clamp((e.clientX-r.left)/r.width);$('d').value=clamp(1-(e.clientY-r.top)/r.height);customPatch();dot();}
 $('xy').onpointerdown=e=>{$('xy').setPointerCapture(e.pointerId);xy(e);};$('xy').onpointermove=e=>{if($('xy').hasPointerCapture(e.pointerId))xy(e);};
+refreshMorph();
 window.addEventListener('blur',()=>stop('Focus lost — muted'));document.addEventListener('visibilitychange',()=>{if(document.hidden)stop('Hidden — muted');});
 </script></html>
