@@ -42,6 +42,23 @@ jobs:
           path: platform-results/
           retention-days: 14
 
+  linux-rate-ecophon:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Ecophon baseline and instrumented rate lifecycle A/B
+        run: bash platform/emulator/ci.sh rate-eco
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: platform-rate-ecophon-evidence
+          if-no-files-found: warn
+          path: platform-results/
+          retention-days: 14
+
   windows-native-virtual:
     needs: linux-virtual-target
     runs-on: windows-2025
