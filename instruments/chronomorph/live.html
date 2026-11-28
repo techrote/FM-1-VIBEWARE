@@ -3,7 +3,7 @@
 <h1>Chronomorph — live clocks</h1><p>Actual local native engine. Edit patterns and warp while playing. Clock markers are sampled local state, not device telemetry.</p>
 <label>Composition <select id="preset"><option>Glass Lattice</option><option>Broken Meridian</option><option>Slow Eclipse</option></select></label>
 <label>BPM <input id="bpm" type="number" min="40" max="220"></label><label>Warp <input id="warp" type="number" min="-60" max="60"></label><label>Variation <input id="variation" type="number" min="0" max="100" value="12"></label><label>Seed <input id="seed" type="number" min="1" max="2147483647" value="17"></label>
-<button id="start">Start / resume</button> <button id="pause">Pause</button> <button id="reset">Reset composition</button> <button id="panic" aria-keyshortcuts="Escape">Panic / disconnect</button><output id="status" aria-live="polite">Stopped</output><div id="lanes"></div><fieldset><legend>Performance scenes</legend><p>Capture tempo, warp, variation and all three patterns; recall without restarting clocks. Four in-memory slots; export/import scene JSON to keep or share them. Seed, preset and transport are not recalled. Press 1–4 outside text/number fields to recall; Escape disconnects even while editing. The factory set fills empty slots only.</p><button id="factoryScenes" type="button">Fill empty slots: Lattice Variations</button> <div id="scenes"></div><p><button id="performScore" type="button">Perform Lattice Variations</button> <button id="cancelScore" type="button">Take manual control</button></p><output id="scoreStatus" aria-live="polite">Score idle — start the engine first. Four 100-block cues, then pause; current clocks are preserved.</output><label for="sceneExchange">Scene bank JSON</label><textarea id="sceneExchange" maxlength="2048" rows="4" style="display:block;width:95%;font:12px monospace" spellcheck="false"></textarea><button id="exportScenes" type="button">Export scenes</button> <button id="importScenes" type="button">Import scenes</button><output id="sceneStatus" aria-live="polite">No scene saved</output></fieldset>
+<button id="start">Start / resume</button> <button id="pause">Pause</button> <button id="reset">Reset composition</button> <button id="panic" aria-keyshortcuts="Escape">Panic / disconnect</button><output id="status" aria-live="polite">Stopped</output><div id="lanes"></div><fieldset><legend>Performance scenes</legend><p>Capture tempo, warp, variation and all three patterns; recall without restarting clocks. Four in-memory slots; export/import scene JSON to keep or share them. Seed, preset and transport are not recalled. Press 1–4 outside text/number fields to recall; Escape disconnects even while editing. The factory set fills empty slots only.</p><button id="factoryScenes" type="button">Fill empty slots: Lattice Variations</button> <div id="scenes"></div><p><button id="performScore" type="button">Perform Lattice Variations</button> <button id="performBank" type="button">Perform saved scenes</button> <label>Seconds per saved scene <input id="cueSeconds" type="number" min="1" max="10" step="1" value="5"></label> <button id="cancelScore" type="button">Take manual control</button></p><output id="scoreStatus" aria-live="polite">Score idle — start the engine first. Factory score: four 5-second cues. Saved scenes: occupied slots in order, 1–10 seconds each. Both preserve clocks and auto-pause.</output><label for="sceneExchange">Scene bank JSON</label><textarea id="sceneExchange" maxlength="2048" rows="4" style="display:block;width:95%;font:12px monospace" spellcheck="false"></textarea><button id="exportScenes" type="button">Export scenes</button> <button id="importScenes" type="button">Import scenes</button><output id="sceneStatus" aria-live="polite">No scene saved</output></fieldset>
 <script>
 const $=id=>document.getElementById(id), presets=[[112,24,[7,5,11],[73,21,1321]],[142,-32,[5,9,7],[21,297,85]],[84,48,[9,7,13],[293,73,4693]]];
 let lens=[],masks=[],token=null,seq=0,gen=0,playEpoch=0,playing=0,ctx=null,next=0,sources=new Set(),visual=[],timer=null,inflight=null;
@@ -62,13 +62,36 @@ function sceneShortcut(key,editing,repeat,modified,composing){
   return null;
 }
 // Local score cursor advances only on accepted native blocks, never wall time.
-function makeLatticePerformance(){
-  const cues=factoryCues();let count=0;
+function makeScenePerformance(entries,blocksPerCue){
+  if(!Array.isArray(entries)||entries.length<1||entries.length>4||
+      !Number.isInteger(blocksPerCue)||blocksPerCue<20||blocksPerCue>200||blocksPerCue%20!==0)
+    throw new RangeError('score bounds');
+  // Validate and detach every cue using the same scene-bank schema.
+  const validation=makeSceneBank();let last=-1;
+  const cues=entries.map(({slot,controls})=>{
+    if(!Number.isInteger(slot)||slot<=last||slot>3)throw new RangeError('score slot order');
+    last=slot;validation.save(slot,controls);return {slot,controls:validation.recall(slot)};
+  });
+  const total=cues.length*blocksPerCue;let count=0;
   return {
-    get count(){return count},
-    frame(){return count<400?{cue:Math.floor(count/100),controls:JSON.parse(JSON.stringify(cues[Math.floor(count/100)]))}:null},
-    accept(){if(count>=400)throw new RangeError('score finished');return ++count}
+    get count(){return count},get total(){return total},get cueCount(){return cues.length},
+    frame(){
+      if(count>=total)return null;
+      const cue=Math.floor(count/blocksPerCue),entry=cues[cue];
+      return {cue,slot:entry.slot,first:count%blocksPerCue===0,
+        controls:JSON.parse(JSON.stringify(entry.controls))};
+    },
+    accept(){if(count>=total)throw new RangeError('score finished');return ++count}
   };
+}
+function makeLatticePerformance(){
+  return makeScenePerformance(factoryCues().map((controls,slot)=>({slot,controls})),100);
+}
+function makeBankPerformance(bank,seconds){
+  if(!Number.isInteger(seconds)||seconds<1||seconds>10)throw new RangeError('cue seconds');
+  const entries=[];
+  for(let slot=0;slot<4;slot++){const controls=bank.recall(slot);if(controls!==null)entries.push({slot,controls})}
+  return makeScenePerformance(entries,seconds*20);
 }
 let score=null;
 function cancelScore(reason='Manual control'){
@@ -82,6 +105,14 @@ $('performScore').onclick=()=>{
   if(score)return;
   if(!token||!playing){$('scoreStatus').textContent='Start or resume the engine first';return}
   score=makeLatticePerformance();$('scoreStatus').textContent='Score armed — next native block';
+};
+$('performBank').onclick=()=>{
+  if(score)return;
+  if(!token||!playing){$('scoreStatus').textContent='Start or resume the engine first';return}
+  try{
+    score=makeBankPerformance(sceneBank,Number($('cueSeconds').value));
+    $('scoreStatus').textContent='Saved score armed — '+score.cueCount+' frozen scene(s), '+score.total+' blocks';
+  }catch(e){$('scoreStatus').textContent='Saved score rejected — populate a slot and enter 1–10 whole seconds'}
 };
 $('cancelScore').onclick=()=>cancelScore();
 for(const id of ['bpm','warp','variation','seed'])$(id).addEventListener('input',()=>cancelScore());
@@ -125,7 +156,7 @@ async function pump(g){if(g!==gen||!token)return;try{
   if(next-ctx.currentTime<.075&&sources.size<3&&visual.length<3){
     const active=playing,epoch=playEpoch,controller=new AbortController(),performance=score;inflight=controller;
     const frame=performance?performance.frame():null;
-    if(frame&&performance.count%100===0)applyScene(frame.controls);
+    if(frame&&frame.first)applyScene(frame.controls);
     const r=await request('/block',{token,seq:++seq,...(frame?frame.controls:sceneControls()),playing:active},controller.signal);
     if(g!==gen)return;inflight=null;
     if(r.seq!==seq)throw Error('Sequence mismatch');
@@ -133,8 +164,8 @@ async function pump(g){if(g!==gen||!token)return;try{
       const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);const at=Math.max(next,ctx.currentTime+.008);s.onended=()=>sources.delete(s);sources.add(s);s.start(at);next=at+.05;visual.push({time:next,lanes:r.lanes,playing:r.playing});
       if(performance&&score===performance){
         const count=performance.accept();
-        $('scoreStatus').textContent='Score cue '+(frame.cue+1)+' / 4 — '+count+' / 400 accepted blocks';
-        if(count===400){score=null;playing=0;$('scoreStatus').textContent='Score complete — paused; resume manually'}
+        $('scoreStatus').textContent='Score cue '+(frame.cue+1)+' / '+performance.cueCount+' (scene '+(frame.slot+1)+') — '+count+' / '+performance.total+' accepted blocks';
+        if(count===performance.total){score=null;playing=0;$('scoreStatus').textContent='Score complete — paused; resume manually'}
       }
     }
   }
