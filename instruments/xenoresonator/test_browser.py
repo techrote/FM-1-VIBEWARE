@@ -168,7 +168,7 @@ try:
         page.locator('#xy').scroll_into_view_if_needed()
         page.locator('#xy').click(position={'x':20,'y':20})
         assert page.input_value('#patch')==''
-        # A programmatic same-session patch switch does not release a held note.
+        # Real performance keys must not release a held note or steal focus.
         # Ordinary user focus changes still follow the existing blur-release rule.
         page.select_option('#patch',value='ceramic-chime')
         page.select_option('#octave',value='72')
@@ -180,9 +180,38 @@ try:
                 req.post_data_json['d']==92 and req.post_data_json['c']==12):
             page.evaluate("patchPicker.value='ceramic-click';patchPicker.dispatchEvent(new Event('change'))")
         assert page.evaluate("heldKey==='KeyZ'")
+        for i,patch in enumerate(patches,1):
+            with page.expect_response(lambda r:r.url==url+'/block' and r.ok and
+                    r.request.post_data_json['event']==0 and
+                    all(r.request.post_data_json[k]==patch[k] for k in ('p','e','d','c'))) as witness:
+                page.keyboard.press(str(i))
+            assert len(base64.b64decode(witness.value.json()['pcm'],validate=True))==2400
+            assert page.input_value('#patch')==patch['id']
+            assert page.evaluate("heldKey==='KeyZ' && document.activeElement===strike")
+        # Membrane patch is p=3/e=118/d=9/c=80; make a continuous macro edit.
+        for key,k,value in [('ArrowRight','e',122),('ArrowUp','d',13),(']','c',84)]:
+            with page.expect_request(lambda req:req.url==url+'/block' and
+                    req.method=='POST' and req.post_data_json['event']==0 and
+                    req.post_data_json[k]==value):
+                page.keyboard.press(key)
+            assert int(page.input_value('#'+k))==value
+            assert page.input_value('#patch')==''
+        # Repeated patch key must not overwrite a subsequent manual adjustment.
+        page.keyboard.down('1')
+        page.keyboard.press('ArrowRight')
+        assert int(page.input_value('#e'))==58
+        page.keyboard.down('1')
+        page.keyboard.up('1')
+        assert int(page.input_value('#e'))==58 and page.input_value('#patch')==''
+        # Coalesced macro updates clamp at both bounds, with no queued strikes.
+        for key,k,value in [('ArrowRight','e',127),('ArrowDown','d',0),('ArrowLeft','e',0),('ArrowUp','d',127),('[','c',0),(']','c',127)]:
+            for _ in range(34):
+                page.keyboard.press(key)
+            assert int(page.input_value('#'+k))==value
+        assert page.evaluate("heldKey==='KeyZ' && pointer===null && events.length<=8")
         gesture(lambda:page.keyboard.up('z'),2)
         assert [q['event'] for q in requests[start:] if q['event']]==[1,2]
-        print('PASS factory patch controls, manual custom state and no synthetic strike/release')
+        print('PASS factory patches, actual keyboard recall, macro bounds/repeat and no synthetic strike/release')
 
         # Fail a real request while the engine is active, then reconnect.
         page.route('**/block',lambda route:route.abort())
