@@ -58,8 +58,10 @@ jobs:
           python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('audition/performances/companion-replay.json').read_bytes()).hexdigest()=='0e5ec4eded3a2145005bf50a8a9abb8bbbf979d693f09d0dfc50f48baefa5adc'"
           python feedback.py "$lib" audition/feedback
           python -c "import hashlib,pathlib; p=pathlib.Path('audition/feedback'); expected={'population-feedback.json':'7dc794635135e92867da924938728125879b28d659d2e0cac0dfba5de7fa0056','population-feedback.wav':'a129ef7e0defc7bfbe1ec05e677a0342c2e46aea7e621e4138e65e6e29ec5853','population-steady.json':'6a63209d0baf9ecf054ea65ceb1b91262ab2952a81286915f0f148bafad6cd14','population-steady.wav':'ebcf20142f7c9a046bc7a08b45f79bdf00f1210107ba333506cf19bda43e16c7','population-summary.json':'44014f4f225e5076bc6b86b42646b96d02bd6a654032b8d22ca68a7c8ca9c4d3'}; assert {f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in p.iterdir()}==expected"
+          python live_arc_fixture.py "$lib" audition/live-arc
+          python -c "import hashlib,pathlib; p=pathlib.Path('audition/live-arc/live-arc-replay.json'); assert hashlib.sha256(p.read_bytes()).hexdigest()=='3ea099d0a352e56398f9bd0583103f0971dfa6cbca145be4637a72204411c8f3'"
           cp ecophon* audition/
-          cp README.md fixture.c live.py live.html test_live.py test_browser.py profile.json performance.py companion_fixture.py feedback.py audition/
+          cp README.md fixture.c live.py live.html test_live.py test_browser.py profile.json performance.py companion_fixture.py feedback.py live_arc_fixture.py audition/
           if [ "$RUNNER_OS" = Windows ]; then cp ecof.dll audition/; else cp libecof.so audition/; fi
       - uses: actions/upload-artifact@v4
         with:
