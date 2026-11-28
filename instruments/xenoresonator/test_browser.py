@@ -213,6 +213,40 @@ try:
         assert [q['event'] for q in requests[start:] if q['event']]==[1,2]
         print('PASS factory patches, actual keyboard recall, macro bounds/repeat and no synthetic strike/release')
 
+        # User material exchange never acts as a note event. Import is slot-only.
+        page.locator('summary').click()
+        page.click('#user-capture')
+        captured=page.input_value('#user-doc')
+        assert '"schema":"xenoresonator.material/1"' in captured
+        before=page.evaluate("Object.fromEntries(userKeys.map(k=>[k,Number($(k).value)]))")
+        doc='{"schema":"xenoresonator.material/1","p":2,"e":93,"d":17,"c":110}'
+        page.fill('#user-doc',doc)
+        page.click('#user-import')
+        assert page.evaluate("Object.fromEntries(userKeys.map(k=>[k,Number($(k).value)]))")==before
+        page.fill('#user-doc',doc.replace('"c":110','"c":128'))
+        page.click('#user-import')
+        assert page.locator('#user-status').inner_text().startswith('Rejected')
+        assert page.evaluate("userPatch.c===110")
+        page.select_option('#patch',value='ceramic-chime')
+        page.locator('#strike').focus()
+        start=len(requests)
+        pitched('z',72)
+        with page.expect_response(lambda r:r.url==url+'/block' and r.ok and
+                r.request.post_data_json['event']==0 and
+                all(r.request.post_data_json[k]==v for k,v in dict(p=2,e=93,d=17,c=110).items())) as witness:
+            page.keyboard.press('7')
+        assert any(base64.b64decode(witness.value.json()['pcm'],validate=True))
+        assert page.evaluate("heldKey==='KeyZ' && document.activeElement===strike")
+        assert page.input_value('#patch')==''
+        page.keyboard.down('7')
+        page.keyboard.press('ArrowRight')
+        page.keyboard.down('7')
+        page.keyboard.up('7')
+        assert page.input_value('#e')=='97'
+        gesture(lambda:page.keyboard.up('z'),2)
+        assert [q['event'] for q in requests[start:] if q['event']]==[1,2]
+        print('PASS user material slot import isolation, invalid rejection, held recall/PCM and repeat')
+
         # Fail a real request while the engine is active, then reconnect.
         page.route('**/block',lambda route:route.abort())
         wait("document.querySelector('#status').textContent.startsWith('Connection lost')")

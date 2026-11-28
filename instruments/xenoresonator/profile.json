@@ -75,5 +75,29 @@
     "negotiated device telemetry",
     "preset persistence",
     "clock"
-  ]
+  ],
+  "local_material_document": {
+    "schema": "xenoresonator.material/1",
+    "max_characters": 256,
+    "fields": {
+      "p": [
+        0,
+        3
+      ],
+      "e": [
+        0,
+        127
+      ],
+      "d": [
+        0,
+        127
+      ],
+      "c": [
+        0,
+        127
+      ]
+    },
+    "import": "slot only; explicit recall required",
+    "transport": "none; manual local document exchange"
+  }
 }
