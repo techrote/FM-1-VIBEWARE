@@ -43,7 +43,7 @@ jobs:
           node companion/grimoire/test_gesture.cjs
           node companion/grimoire/test_visual.cjs
           python -c "import hashlib,pathlib; p=pathlib.Path('out'); [(print(f.name,hashlib.sha256(f.read_bytes()).hexdigest())) for f in sorted(p.glob('*.wav'))]"
-          cp companion/grimoire/{host.py,index.html,smoke.py,replay.py,gesture.js,profile.json,test_gesture.cjs,test_visual.cjs,test_browser.py} out/
+          cp companion/grimoire/{host.py,index.html,smoke.py,replay.py,sketch_replay.py,gesture.js,profile.json,test_gesture.cjs,test_visual.cjs,test_browser.py} out/
           python out/smoke.py out/orbit.$ext
           node out/test_gesture.cjs
           node out/test_visual.cjs
@@ -56,6 +56,8 @@ jobs:
           python smoke.py "orbit.$ext"
           node test_gesture.cjs
           node test_visual.cjs
+          python sketch_replay.py "orbit.$ext" ../sketch-out
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('../sketch-out/sketch-replay.json').read_bytes()).hexdigest() == '5036b49597db15524d29a2c61218774a0ffbf78c04127cd42313c16accb2dc17'"
       - name: Real Chromium playback and fault integration
         if: runner.os == 'Linux'
         timeout-minutes: 8
@@ -72,6 +74,10 @@ jobs:
           rm out/ribbon-test*
           python -c "import hashlib,pathlib; p=pathlib.Path('ribbon-out'); expected={'ribbon.wav':'656e0005c1bf3f3938e1e53421eb08388a6277a7ac4459fcb4055be6cd4d8c00','fixed-y.wav':'f177381f4a167347d7c6f02697bb1a4bfb23b06b77b1b696638e56764459b8f8','ribbon.csv':'1330ce29c3fb722095acdf3af217032b2d1beb3473e4007a2414b46678adafaf'}; assert all(hashlib.sha256((p/n).read_bytes()).hexdigest()==h for n,h in expected.items()), 'ribbon hash mismatch'"
           cp instruments/grimoire/ribbon.c ribbon-out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grimoire-sketch-replay-${{ matrix.os }}
+          path: sketch-out/
       - uses: actions/upload-artifact@v4
         with:
           name: grimoire-ribbon-${{ matrix.os }}
