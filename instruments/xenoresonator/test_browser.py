@@ -374,9 +374,10 @@ try:
         print('PASS held-note deadline, native panic/stale session, late response quarantine and actual audio recovery')
         # Corrupt actual completed native receipts, one per live session.
         # A rejected receipt must not schedule even one extra AudioBufferSource.
-        for field,value,message in [('levels',None,'Modal receipt'),
-                                    ('levels',[0,0,131071,0,0,0],'Modal receipt'),
-                                    ('pcm','?'*3200,'PCM format')]:
+        for path,field,value,message in [('/block','levels',None,'Modal receipt'),
+                    ('/block','levels',[0,0,131071,0,0,0],'Modal receipt'),
+                    ('/block','pcm','?'*3200,'PCM format'),
+                    ('/memory-block','patch',{'p':4,'e':1,'d':2,'c':3},'Material readback')]:
             fresh(90)
             page.locator('#strike').hover()
             gesture(page.mouse.down,1)
@@ -384,7 +385,7 @@ try:
             old_token=page.evaluate('token')
             with page.expect_response(lambda r:r.url==url+'/panic' and
                     r.request.method=='POST' and r.request.post_data_json['token']==old_token) as panic:
-                page.evaluate("""([field,value]) => {
+                page.evaluate("""([path,field,value]) => {
                   const original=window.fetch;
                   window.badReceiptScheduled=0;
                   const create=AudioContext.prototype.createBufferSource;
@@ -394,7 +395,7 @@ try:
                   };
                   window.fetch=async (...args)=>{
                     const response=await original(...args);
-                    if(args[0]!=='/block')return response;
+                    if(args[0]!==path)return response;
                     window.fetch=original;
                     const data=await response.json();
                     data[field]=value;
@@ -405,7 +406,9 @@ try:
                     AudioContext.prototype.createBufferSource=create;
                     window.badReceiptDelivered=false;
                   };
-                }""",[field,value])
+                }""",[path,field,value])
+                if path=="/memory-block":
+                    page.keyboard.press("7")
                 wait(f"$('status').textContent.includes('{message}') && !active")
             assert panic.value.ok and panic.value.json()['muted'] is True
             silent()
@@ -421,7 +424,7 @@ try:
         gesture(page.mouse.up,2)
         page.click('#stop')
         silent()
-        print('PASS malformed native modal/PCM receipts fail closed before audio scheduling and recover')
+        print('PASS malformed native modal/PCM/material receipts fail closed before audio scheduling and recover')
         assert not errors,errors
         print('PASS Chromium actual audio, modal coupling, XY, input ownership, panic, fault and reconnect',coupled)
         browser.close()
