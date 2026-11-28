@@ -142,6 +142,23 @@
       }
     ],
     "takeover": "manual controls, individual cue, freeze, feedback, reset or panic cancel the whole Arc",
-    "transport": false
+    "transport": false,
+    "environment_memories": {
+      "scope": "local page session; retained across habitat reset, not page reload",
+      "slots": 2,
+      "fields": [
+        "fertility",
+        "sharing",
+        "pressure"
+      ],
+      "range": [
+        0,
+        255
+      ],
+      "recall_blocks": 40,
+      "capture": "current slider intent, not agent/resource state; does not interrupt cue",
+      "recall": "snapshot target; no reset; manual/feedback/freeze/panic override",
+      "transport": false
+    }
   }
 }
