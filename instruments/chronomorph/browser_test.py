@@ -170,6 +170,43 @@ with Server(("127.0.0.1",0),Handler) as s:
             assert page.evaluate("window.witness.starts")==n
             assert page.locator(".current").count()==0
             assert page.locator("#status").inner_text()=="Stopped / disconnected"
+            # Manual takeover and full native score playback; no reset of the active session.
+            page.get_by_role("button",name="Start / resume",exact=True).click()
+            page.wait_for_function("token!==null && playing===1 && seq>2")
+            page.get_by_role("button",name="Perform Lattice Variations",exact=True).click()
+            page.wait_for_function("score!==null && score.count>=2")
+            page.locator("#bpm").fill("156")
+            assert "cancelled" in page.locator("#scoreStatus").inner_text()
+            page.wait_for_function("score===null")
+            requests=[]
+            def observe_score(req):
+                if req.url.endswith("/block"):
+                    requests.append(req.post_data_json)
+            page.on("request",observe_score)
+            first,active_token=page.evaluate("""() => {
+                document.querySelector('#performScore').click();return [seq+1,token]
+            }""")
+            before=page.evaluate("window.witness.nonzero")
+            page.wait_for_function("document.querySelector('#scoreStatus').textContent.startsWith('Score complete')",timeout=45000)
+            page.wait_for_function("document.querySelector('#status').textContent.startsWith('Paused')")
+            frames=[q for q in requests if q["token"]==active_token and first<=q["seq"]<first+400]
+            assert len(frames)==400
+            assert [q["seq"] for q in frames]==list(range(first,first+400))
+            expected=[
+                (112,24,12,[[7,73],[5,21],[11,1321]]),
+                (124,-36,25,[[7,19],[5,11],[11,585]]),
+                (84,48,38,[[9,293],[7,73],[13,4693]]),
+                (72,-12,4,[[7,9],[5,4],[11,129]])]
+            for i,q in enumerate(frames):
+                assert q["playing"]==1
+                assert (q["bpm"],q["warp"],q["variation"],q["patterns"])==expected[i//100]
+            assert page.evaluate("token")==active_token
+            assert page.evaluate("window.witness.nonzero")>before
+            page.wait_for_timeout(250)
+            n=page.evaluate("window.witness.nonzero")
+            page.wait_for_timeout(200)
+            assert page.evaluate("window.witness.nonzero")==n
+            page.get_by_role("button",name="Panic / disconnect",exact=True).click()
             assert not errors,errors
             print("Chromium actual native PCM scheduling, visual clocks, live controls, pause/resume, panic and reconnect PASS",page.evaluate("window.witness"))
             browser.close()
