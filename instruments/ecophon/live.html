@@ -15,6 +15,10 @@
 <label><input id="frozen" type="checkbox"> Freeze ecological interactions (comparison)</label>
 
 <p>Environmental XY: fertility left to right, pressure top to bottom</p><div id="xy" aria-label="Environmental gesture surface"><span id="marker"></span></div>
+<fieldset><legend>Habitat Arc — live environment cues</legend>
+<button id="cueBase" disabled>Mutualism</button> <button id="cueDrought" disabled>Drought</button> <button id="cueRecovery" disabled>Recovery</button>
+<p id="cueStatus" role="status">Manual environment.</p>
+<small>Each cue ramps from the current environment over 40 native block requests (four seconds of model audio when completed). No reset. Manual sliders, XY, freeze, feedback or panic cancel the ramp.</small></fieldset>
 <fieldset><legend>Population Tide — optional live feedback</legend>
 <label><input id="feedback" type="checkbox" disabled> Steer living population automatically</label>
 <label>Population goal <input id="goal" type="range" min="1" max="8" value="5"><output id="goalValue">5</output></label>
@@ -28,7 +32,21 @@
 const $=id=>document.getElementById(id), names=["fertility","sharing","pressure"], outs=["of","os","op"];
 let ctx,gain,generation=0,epoch=0,next=0,timer=0,live=false,starting=false,raf=0;
 const visuals=[];const MAX_VISUALS=8;
-let lastLiving=null;
+let lastLiving=null,cue=null;
+const CUE_BLOCKS=40;
+const habitatCues={cueBase:[180,200,40],cueDrought:[0,0,255],cueRecovery:[255,220,0]};
+function cueControls(from,to,block){
+ if(!Number.isInteger(block)||block<1||block>CUE_BLOCKS)throw Error("invalid cue block");
+ return from.map((v,i)=>Math.floor((v*(CUE_BLOCKS-block)+to[i]*block)/CUE_BLOCKS));
+}
+function cancelCue(){cue=null;$("cueStatus").textContent="Manual environment."}
+function startCue(id){
+ if(!live||$("frozen").checked||!Object.prototype.hasOwnProperty.call(habitatCues,id))return;
+ manualOverride();
+ cue={id,from:names.map(n=>+$(n).value),to:habitatCues[id],block:0};
+ $("cueStatus").textContent=$(id).textContent+" · 0/"+CUE_BLOCKS;
+}
+Object.keys(habitatCues).forEach(id=>$(id).onclick=()=>startCue(id));
 function populationControls(previous,living,goal){
  if(!Array.isArray(previous)||previous.length!==4||previous[3]!==0||previous.some(v=>!Number.isInteger(v)||v<0||v>255)||!Number.isInteger(living)||living<0||living>8||!Number.isInteger(goal)||goal<1||goal>8)throw Error("invalid population control");
  const error=living-goal,wanted=error>1?[75,100,160,0]:error< -1?[255,220,0,0]:[180,190,60,0];
@@ -36,14 +54,23 @@ function populationControls(previous,living,goal){
 }
 function feedbackStatus(){
  $("feedback").disabled=!live||$("frozen").checked;
+ Object.keys(habitatCues).forEach(id=>$(id).disabled=!live||$("frozen").checked);
  $("feedbackStatus").textContent=($("feedback").checked?"Population feedback active":"Manual environment")+(lastLiving===null?"":" · last completed native block: "+lastLiving+"/8 living");
 }
-function manualOverride(){ $("feedback").checked=false;feedbackStatus(); }
-$("feedback").onchange=()=>{if(!live||$("frozen").checked)$("feedback").checked=false;feedbackStatus()};
+function manualOverride(){ cancelCue();$("feedback").checked=false;feedbackStatus(); }
+$("feedback").onchange=()=>{if(!live||$("frozen").checked)$("feedback").checked=false;if($("feedback").checked)cancelCue();feedbackStatus()};
 $("goal").oninput=()=>{$("goalValue").textContent=$("goal").value};
 $("frozen").onchange=manualOverride;
 function stepControls(){
  const manual=[...names.map(n=>+$(n).value),+ $("frozen").checked];
+ if(cue&&!manual[3]){
+  const active=cue;
+  const result=[...cueControls(active.from,active.to,++active.block),0];
+  sliders(result);
+  $("cueStatus").textContent=$(active.id).textContent+" · "+active.block+"/"+CUE_BLOCKS+(active.block===CUE_BLOCKS?" complete":"");
+  if(active.block===CUE_BLOCKS)cue=null;
+  return result;
+ }
  if(!$("feedback").checked||manual[3]||lastLiving===null)return manual;
  const result=populationControls(manual,lastLiving,+$("goal").value);
  sliders(result);return result;
@@ -117,5 +144,6 @@ $("start").onclick=async()=>{
   live=true;feedbackStatus();next=ctx.currentTime+0.04;$("status").textContent="Playing native ecological model.";animate(e);pump(e);
  }catch(err){if(e===epoch){stop();$("status").textContent=err.message}}finally{starting=false;$("start").disabled=false}
 };
+window.addEventListener("keydown",e=>{if(e.key==="Escape"){e.preventDefault();stop()}});
 window.addEventListener("pagehide",stop);
 </script></html>
