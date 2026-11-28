@@ -80,6 +80,17 @@ jobs:
           name: xenoresonator-user-material-replay-${{ matrix.os }}
           path: instruments/xenoresonator/user material replay/
           if-no-files-found: error
+      - name: Native A/B material morph comparative score
+        run: |
+          python material_morph_replay.py ./live.dll 'material morph replay'
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('material morph replay/receipt.json').read_bytes()).hexdigest() == '2418c5fc5b6c940d87d2f8964ad63463c452c3fded5094eb17fde72b78ff53b7'"
+          cp material_morph_replay.py live.html xeno.c xeno.h live_bridge.c 'material morph replay/'
+          git rev-parse HEAD > 'material morph replay/SOURCE-REVISION.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xenoresonator-material-morph-${{ matrix.os }}
+          path: instruments/xenoresonator/material morph replay/
+          if-no-files-found: error
       - name: Create audition package and PCM receipts
         run: |
           mkdir -p 'audition package'
