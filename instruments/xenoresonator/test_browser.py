@@ -247,6 +247,42 @@ try:
         assert [q['event'] for q in requests[start:] if q['event']]==[1,2]
         print('PASS user material slot import isolation, invalid rejection, held recall/PCM and repeat')
 
+        # A/B endpoints are local documents; import does not alter controls.
+        # A material changes discretely at 64, while macros interpolate.
+        page.select_option('#patch',value='ceramic-chime')
+        before=page.evaluate("Object.fromEntries(userKeys.map(k=>[k,Number($(k).value)]))")
+        page.fill('#user-doc','{"schema":"xenoresonator.material/1","p":0,"e":0,"d":127,"c":0}')
+        page.click('#user-import')
+        page.fill('#morph-b-doc','{"schema":"xenoresonator.material/1","p":3,"e":127,"d":0,"c":127}')
+        page.click('#morph-b-import')
+        assert page.evaluate("Object.fromEntries(userKeys.map(k=>[k,Number($(k).value)]))")==before
+        assert not page.locator('#morph').is_disabled()
+        page.fill('#morph-b-doc','{"schema":"xenoresonator.material/1","p":4,"e":127,"d":0,"c":127}')
+        page.click('#morph-b-import')
+        assert page.locator('#morph-b-status').inner_text().startswith('Rejected')
+        assert page.evaluate("morphB.p===3 && userPatch.p===0")
+        page.locator('#morph').fill('56')
+        assert page.evaluate("Number($('p').value)===0 && Number($('e').value)===56")
+        page.locator('#strike').focus()
+        start=len(requests)
+        pitched('z',72)
+        def morph_key(key,position,material):
+            expected=dict(p=material,e=position,d=127-position,c=position)
+            with page.expect_response(lambda r:r.url==url+'/block' and r.ok and
+                    r.request.post_data_json['event']==0 and
+                    all(r.request.post_data_json[k]==v for k,v in expected.items())) as witness:
+                page.keyboard.press(key)
+            assert len(base64.b64decode(witness.value.json()['pcm'],validate=True))==2400
+            assert page.evaluate("heldKey==='KeyZ' && document.activeElement===strike")
+            assert int(page.input_value('#morph'))==position
+            assert page.input_value('#patch')==''
+        morph_key('9',64,3)
+        morph_key('8',56,0)
+        morph_key('9',64,3)
+        gesture(lambda:page.keyboard.up('z'),2)
+        assert [q['event'] for q in requests[start:] if q['event']]==[1,2]
+        print('PASS material A/B import isolation, midpoint switch, held keyboard morph and native block response')
+
         # Fail a real request while the engine is active, then reconnect.
         page.route('**/block',lambda route:route.abort())
         wait("document.querySelector('#status').textContent.startsWith('Connection lost')")

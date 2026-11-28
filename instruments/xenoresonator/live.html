@@ -6,10 +6,12 @@
 <div id="xy" aria-label="Excitation and damping XY surface"><span id="dot"></span></div>
 <label>Coupling <input type="range" id="c" min="0" max="127" value="90"></label><label>Pitch <input type="range" id="n" min="36" max="84" value="48"></label><label>Velocity <input type="range" id="v" min="1" max="127" value="110"></label>
 <button id="start">Start audio</button> <button id="strike" disabled>Hold to strike</button> <button id="stop">Panic / stop</button>
-<p><small>Chromatic keys: focus Hold to strike (automatically focused after Start audio). Z S X D C V G B H N J M , = C through C. One held note at a time; release before the next note. While focused here, 1–6 recall factory patches, arrow keys adjust excitation/damping, and [ / ] adjust coupling; 7 recalls the user material. These controls do not release the note.</small></p>
+<p><small>Chromatic keys: focus Hold to strike (automatically focused after Start audio). Z S X D C V G B H N J M , = C through C. One held note at a time; release before the next note. While focused here, 1–6 recall factory patches, arrow keys adjust excitation/damping, and [ / ] adjust coupling; 7 recalls user material A; 8 / 9 step the A/B morph toward A / B. These controls do not release the note.</small></p>
 <label>Keyboard octave <select id="octave"><option value="36">C2–C3</option><option value="48" selected>C3–C4</option><option value="60">C4–C5</option><option value="72">C5–C6</option></select></label>
 <label>Factory patch <select id="patch"><option value="">Custom controls</option></select></label><small>Changes material, excitation, damping and coupling together; does not strike or reset. Note and velocity stay unchanged. With Hold to strike focused, use 1–6 in the listed order to switch patches without releasing a held key.</small>
-<details><summary>User material slot</summary><p><small>Capture current material and macros, or import a bounded local JSON document. Import changes only the slot; Recall (or 7 while playing) applies it without a new strike. Copy the document to retain it between page reloads. No device transport.</small></p><label>Material document <textarea id="user-doc" rows="4" maxlength="256" style="width:100%;box-sizing:border-box;font:inherit"></textarea></label><button id="user-capture" type="button">Capture controls</button> <button id="user-import" type="button">Import to slot</button> <button id="user-recall" type="button" disabled>Recall slot</button><p id="user-status" role="status">Slot empty</p></details>
+<details><summary>User material A and A/B morph</summary><p><small>Capture current material and macros, or import a bounded local JSON document. Import changes only the slot; Recall (or 7 while playing) applies it without a new strike. Copy the document to retain it between page reloads. No device transport.</small></p><label>Material document <textarea id="user-doc" rows="4" maxlength="256" style="width:100%;box-sizing:border-box;font:inherit"></textarea></label><button id="user-capture" type="button">Capture controls</button> <button id="user-import" type="button">Import to slot</button> <button id="user-recall" type="button" disabled>Recall slot</button><p id="user-status" role="status">Slot empty</p>
+<label>Material B document <textarea id="morph-b-doc" rows="4" maxlength="256" style="width:100%;box-sizing:border-box;font:inherit"></textarea></label><button id="morph-b-capture" type="button">Capture B controls</button> <button id="morph-b-import" type="button">Import B</button><p id="morph-b-status" role="status">B empty</p>
+<label>A/B morph (last requested position) <input type="range" id="morph" min="0" max="127" value="0" disabled></label><p id="morph-status" role="status">Capture or import both endpoints</p><small>Explicit morph requests blend excitation, damping and coupling; material switches at position 64 (not continuous physical material interpolation). Keys 8 / 9 move eight steps while Hold to strike is focused. Capturing or importing either endpoint does not apply it. Manual edits can change controls after a morph; reconnect never recalls endpoints automatically. Page-local only.</small></details>
 <script type="application/json" id="patch-data">[{"id":"ceramic-chime","name":"Ceramic chime","p":0,"e":54,"d":0,"c":100},{"id":"ceramic-click","name":"Ceramic click","p":0,"e":115,"d":92,"c":12},{"id":"woodglass-pluck","name":"Woodglass pluck","p":1,"e":48,"d":24,"c":65},{"id":"alien-bell","name":"Alien bell","p":2,"e":105,"d":0,"c":100},{"id":"alien-scrape","name":"Alien scrape","p":2,"e":127,"d":42,"c":14},{"id":"membrane-pulse","name":"Membrane pulse","p":3,"e":118,"d":9,"c":80}]</script>
 <p id="status" role="status">Stopped</p><div id="modes" aria-hidden="true"><div></div><div></div><div></div><div></div><div></div><div></div></div><p><small>Body A (teal), body B (ochre): actual local modal magnitude proxies sampled within each audio block. Not device telemetry. XY and material changes affect the live decay. No MIDI or device connection.</small></p>
 <script>
@@ -67,7 +69,7 @@ function applyPatch(patch){
 }
 patchPicker.onchange=()=>applyPatch(patches.find(p=>p.id===patchPicker.value));
 const userSchema='xenoresonator.material/1', userKeys=['p','e','d','c'];
-let userPatch=null;
+let userPatch=null,morphB=null;
 function parseUserPatch(raw){
   if(typeof raw!=='string'||raw.length>256)throw Error('Document size');
   const q=JSON.parse(raw);
@@ -81,6 +83,7 @@ function storeUserPatch(patch){
   $('user-doc').value=JSON.stringify({schema:userSchema,...patch});
   $('user-recall').disabled=false;
   $('user-status').textContent='Slot ready — recall explicitly';
+  refreshMorph();
 }
 function recallUserPatch(){
   if(!userPatch)return;
@@ -94,16 +97,45 @@ $('user-import').onclick=()=>{
   catch(e){$('user-status').textContent='Rejected — previous slot unchanged';}
 };
 $('user-recall').onclick=recallUserPatch;
+function refreshMorph(){
+  $('morph').disabled=!(userPatch&&morphB);
+  $('morph-status').textContent=$('morph').disabled?'Capture or import both endpoints':'Endpoints ready — move morph explicitly';
+}
+function storeMorphB(patch){
+  morphB=patch;
+  $('morph-b-doc').value=JSON.stringify({schema:userSchema,...patch});
+  $('morph-b-status').textContent='B ready — move morph explicitly';
+  refreshMorph();
+}
+$('morph-b-capture').onclick=()=>storeMorphB(Object.fromEntries(userKeys.map(k=>[k,Number($(k).value)])));
+$('morph-b-import').onclick=()=>{
+  try{storeMorphB(parseUserPatch($('morph-b-doc').value));}
+  catch(e){$('morph-b-status').textContent='Rejected — previous B unchanged';}
+};
+function applyMorph(position){
+  if(!userPatch||!morphB||!Number.isInteger(position)||position<0||position>127)return false;
+  const values={p:position<64?userPatch.p:morphB.p};
+  for(const k of ['e','d','c'])values[k]=Math.floor((userPatch[k]*(127-position)+morphB[k]*position+63)/127);
+  for(const k of userKeys)$(k).value=values[k];
+  $('morph').value=position;customPatch();dot();
+  $('morph-status').textContent='Morph requested '+position+'/127 — manual edits may supersede';
+  return true;
+}
+$('morph').oninput=()=>applyMorph(Number($('morph').value));
+function stepMorph(delta){
+  applyMorph(Math.max(0,Math.min(127,Number($('morph').value)+delta)));
+}
 const macroKeys={ArrowLeft:['e',-4],ArrowRight:['e',4],ArrowDown:['d',-4],ArrowUp:['d',4],BracketLeft:['c',-4],BracketRight:['c',4]};
 function performanceKey(e){
   const slot=/^Digit[1-6]$/.test(e.code)?Number(e.code.slice(-1))-1:-1;
   const macro=Object.hasOwn(macroKeys,e.code)?macroKeys[e.code]:null;
-  const userRecall=e.code==='Digit7';
-  if(slot<0&&!macro&&!userRecall)return false;
+  const userRecall=e.code==='Digit7',morphStep=e.code==='Digit8'?-8:e.code==='Digit9'?8:0;
+  if(slot<0&&!macro&&!userRecall&&!morphStep)return false;
   e.preventDefault();
   if(!active)return true;
   if(slot>=0){if(!e.repeat)applyPatch(patches[slot]);return true;}
   if(userRecall){if(!e.repeat)recallUserPatch();return true;}
+  if(morphStep){stepMorph(morphStep);return true;}
   const [k,delta]=macro,input=$(k),old=Number(input.value),value=Math.max(0,Math.min(127,old+delta));
   if(value!==old){input.value=value;customPatch();dot();}
   return true;
