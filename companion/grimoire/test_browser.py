@@ -43,7 +43,7 @@ def run(library, executable, screenshot):
                 page.evaluate('''() => {window.meter=audio.createAnalyser();meter.fftSize=2048;
                   bus.connect(meter);const sink=audio.createGain();sink.gain.value=0;meter.connect(sink);sink.connect(audio.destination);window.peak=()=>{const a=new Float32Array(meter.fftSize);
                   meter.getFloatTimeDomainData(a);return Math.max(...a.map(Math.abs))}}''')
-                page.evaluate('''() => {const original=draw; window.played=null; draw=d=>{window.played={x:d.x,y:d.y,gate:d.gate,preset:d.preset,source:d.state_source};original(d)}}''')
+                page.evaluate('''() => {const original=draw; window.played=null; draw=d=>{window.played={x:d.x,y:d.y,gate:d.gate,preset:d.preset,source:d.state_source,localOrbit:d.localOrbit};original(d)}}''')
                 def silence():
                     page.evaluate('window.quietSince = null')
                     page.wait_for_function('''() => {if(peak() >= .0001){quietSince=null;return false}
@@ -71,9 +71,9 @@ def run(library, executable, screenshot):
                 # Changing the trajectory must keep the explicitly held gate and
                 # advance the same clock; verify the bright arc via played native XY.
                 page.locator('#ribbonShape').select_option('crown')
-                page.wait_for_function('held && ribbon.shape==="crown" && ribbon.blend===0 && played.gate===1 && played.y>=96 && played.y<=120 && peak()>.02')
+                page.wait_for_function('held && ribbon.shape==="crown" && ribbon.blend===0 && played.gate===1 && played.y>=96 && played.y<=120 && played.localOrbit?.shape==='crown' && played.localOrbit.path[0][1]===96 && peak()>.02')
                 page.locator('#ribbonShape').select_option('pendulum')
-                page.wait_for_function('held && ribbon.shape==="pendulum" && ribbon.blend===0 && played.gate===1 && played.y>=24 && played.y<=48 && peak()>.02')
+                page.wait_for_function('held && ribbon.shape==="pendulum" && ribbon.blend===0 && played.gate===1 && played.y>=24 && played.y<=48 && played.localOrbit?.shape==='pendulum' && played.localOrbit.path[0][1]===24 && peak()>.02')
                 # Eight-point sketch, with explicit apply and continued gate.
                 page.locator('#sketchEditor summary').click()
                 sketch = page.locator('#sketchPad')
@@ -95,7 +95,7 @@ def run(library, executable, screenshot):
                 page.locator('#sketchImport').click()
                 assert page.evaluate('ribbon.sketch===originalSketch && held && draft.length===8')
                 page.locator('#sketchApply').click()
-                page.wait_for_function('held && ribbon.blend===0 && played.gate===1 && played.y>=52 && played.y<=64 && played.x>=22 && played.x<=38 && peak()>.02')
+                page.wait_for_function('held && ribbon.blend===0 && played.gate===1 && played.y>=52 && played.y<=64 && played.x>=22 && played.x<=38 && played.localOrbit?.shape==='sketch' && played.localOrbit.path[0][1]===52 && peak()>.02')
                 page.locator('#sketchEditor summary').click()
                 page.locator('#pad').scroll_into_view_if_needed()
                 box = page.locator('#pad').bounding_box()
@@ -113,6 +113,7 @@ def run(library, executable, screenshot):
                 page.wait_for_function('!held && ribbon.speed===0 && played && played.gate===0')
                 silence()
                 assert page.locator('#holdGate').is_disabled()
+                assert page.locator('#orbitPlayed').inner_text() == 'Played local orbit: off'
                 assert page.locator('#ribbonSpeed').input_value()=='0'
                 assert page.locator('#ribbonShape').input_value()=='ribbon'
                 assert page.evaluate('ribbon.sketch.length===8 && ribbon.speed===0 && !held')
