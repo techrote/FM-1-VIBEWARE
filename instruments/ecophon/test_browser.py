@@ -228,7 +228,7 @@ with make_server(Path(sys.argv[1]),0) as server:
             assert page.is_disabled("#recallA") and page.is_disabled("#recallB")
             assert "Manual" in page.locator("#cueStatus").inner_text()
             page.uncheck("#frozen")
-            assert not page.is_disabled("#recallA")
+            page.wait_for_function("!document.querySelector('#recallA').disabled")
             page.click("#stop")
             page.wait_for_function("window.ecoRms()<0.000001")
             assert page.is_disabled("#recallA") and page.is_disabled("#recallB")
