@@ -60,3 +60,31 @@ function checkShapes(R){
   return blocks;
 }
 console.log('Orbit Ribbon shapes: '+checkShapes(GestureQueue.Ribbon)+' blocks, 9 distinct trajectories, bounded phase-preserving blend and reset PASS');
+
+function checkSketch(R){
+  const assert=(c,m)=>{if(!c)throw Error(m)};
+  const points=[[8,72],[16,83],[28,91],[40,84],[48,72],[40,77],[28,86],[16,79]];
+  const r=new R();r.setSpeed(2);for(let i=0;i<10;i++)r.block();
+  const before=[r.phase,r.carry,r.x,r.y];r.setSketch(points);r.setShape('sketch');
+  assert(r.blend===8&&before.join() === [r.phase,r.carry,r.x,r.y].join(),'sketch transition continuity');
+  points[0][0]=127;assert(r.path[0][0]===8&&Object.isFrozen(r.path[0]),'sketch copies and freezes');
+  for(let i=0;i<4;i++)r.block();
+  const original=r.sketch;
+  for(const bad of [null,[],Array(7).fill([0,0]),Array(9).fill([0,0]),Array(8).fill([0,128]),Array(8).fill([-.5,0]),Array(8).fill(['0',0]),Array(8).fill([0]),Array(8).fill([0,0,0]),Array(8)]){
+    let rejected=false;try{r.setSketch(bad)}catch{rejected=true}
+    assert(rejected&&r.sketch===original&&r.shape==='sketch','atomic invalid sketch');
+  }
+  let blocks=0;
+  for(const speed of [1,2,4]){
+    r.setSpeed(speed);
+    for(let i=0;i<512;i++){const [x,y]=r.block();blocks++;assert(x>=8&&x<=48&&y>=72&&y<=91,'sketch path bounds')}
+  }
+  r.take(127,0);r.setSketch(Array(8).fill([33,66]));assert(r.block()===null&&r.x===127&&r.y===0,'manual priority on edit');
+  r.resume();for(let i=0;i<4;i++)r.block();assert(r.x===33&&r.y===66,'resume new sketch');
+  r.setSketch(Array(8).fill([0,127]));assert(r.blend===8,'active sketch edit blends');
+  for(let i=0;i<4;i++)r.block();assert(r.x===0&&r.y===127,'active edit endpoint');
+  r.reset();assert(r.shape==='ribbon'&&r.speed===0&&r.block()===null&&r.sketch[0][1]===127,'panic stops automation, saved sketch is inert');
+  const empty=new R();let rejected=false;try{empty.setShape('sketch')}catch{rejected=true}assert(rejected&&empty.shape==='ribbon','unavailable sketch rejected');
+  return blocks;
+}
+console.log('Orbit Ribbon sketches: '+checkSketch(GestureQueue.Ribbon)+' bounded blocks; atomic validation, editing, manual takeover and panic PASS');

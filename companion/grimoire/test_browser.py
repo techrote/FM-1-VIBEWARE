@@ -74,6 +74,17 @@ def run(library, executable, screenshot):
                 page.wait_for_function('held && ribbon.shape==="crown" && ribbon.blend===0 && played.gate===1 && played.y>=96 && played.y<=120 && peak()>.02')
                 page.locator('#ribbonShape').select_option('pendulum')
                 page.wait_for_function('held && ribbon.shape==="pendulum" && ribbon.blend===0 && played.gate===1 && played.y>=24 && played.y<=48 && peak()>.02')
+                # Eight-point sketch, with explicit apply and continued gate.
+                page.locator('#sketchEditor summary').click()
+                sketch = page.locator('#sketchPad')
+                assert page.locator('#sketchApply').is_disabled()
+                for x, y in [(12,74),(20,80),(32,89),(45,84),(48,74),(40,78),(28,86),(16,79)]:
+                    sketch.click(position={'x': x/127*int(sketch.evaluate('(e)=>e.clientWidth')), 'y': (127-y)/127*int(sketch.evaluate('(e)=>e.clientHeight'))})
+                assert page.locator('#sketchStatus').inner_text().startswith('8 / 8')
+                assert page.evaluate('held && ribbon.shape==="pendulum"')
+                page.locator('#sketchApply').click()
+                page.wait_for_function('held && ribbon.shape==="sketch" && ribbon.blend===0 && played.gate===1 && played.y>=70 && played.y<=92 && played.x<=50 && peak()>.02')
+                page.locator('#sketchEditor summary').click()
                 page.locator('#pad').scroll_into_view_if_needed()
                 box = page.locator('#pad').bounding_box()
                 page.mouse.move(box['x']+box['width']*.95,box['y']+box['height']*.95)
@@ -92,6 +103,7 @@ def run(library, executable, screenshot):
                 assert page.locator('#holdGate').is_disabled()
                 assert page.locator('#ribbonSpeed').input_value()=='0'
                 assert page.locator('#ribbonShape').input_value()=='ribbon'
+                assert page.evaluate('ribbon.sketch.length===8 && ribbon.speed===0 && !held')
                 gesture()
                 if screenshot:
                     page.screenshot(path=screenshot)

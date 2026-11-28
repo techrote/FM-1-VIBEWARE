@@ -1,6 +1,6 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Grimoire · Orbit Gate</title>
 <style>body{background:#131321;color:#e4d9be;font:16px system-ui;max-width:540px;margin:24px auto;padding:12px}canvas{width:100%;max-width:480px;touch-action:none;border:1px solid #9b8060}button{margin:5px;padding:10px;background:#302938;color:inherit;border:1px solid #9b8060}button:disabled{opacity:.4}</style>
-<h1>Orbit Gate</h1><p>Grimoire / native-core virtual companion. Drag to sound; X selects pitch, Y bends the satellites and opens the filter.</p><button id="start">Start audio / connect</button><button id="panic">Panic</button><div id="presets"><button data-p="0">Amber</button><button data-p="1">Iron</button><button data-p="2">Abyss</button></div><div id="ribbonControls"><label for="ribbonSpeed">Orbit Ribbon (local model)</label> <select id="ribbonSpeed"><option value="0">Off</option><option value="1">Slow</option><option value="2">Medium</option><option value="4">Fast</option></select><button id="holdGate" disabled aria-pressed="false">Hold gate</button><small>Explicit gate; drag to override, release to resume.</small></div><canvas id="pad" width="320" height="240"></canvas><div><label for="ribbonShape">Ribbon trajectory</label> <select id="ribbonShape" disabled><option value="ribbon">Ribbon</option><option value="crown">Crown · bright arc</option><option value="pendulum">Pendulum · dark sweep</option></select></div><p id="state">Disconnected</p>
+<h1>Orbit Gate</h1><p>Grimoire / native-core virtual companion. Drag to sound; X selects pitch, Y bends the satellites and opens the filter.</p><button id="start">Start audio / connect</button><button id="panic">Panic</button><div id="presets"><button data-p="0">Amber</button><button data-p="1">Iron</button><button data-p="2">Abyss</button></div><div id="ribbonControls"><label for="ribbonSpeed">Orbit Ribbon (local model)</label> <select id="ribbonSpeed"><option value="0">Off</option><option value="1">Slow</option><option value="2">Medium</option><option value="4">Fast</option></select><button id="holdGate" disabled aria-pressed="false">Hold gate</button><small>Explicit gate; drag to override, release to resume.</small></div><canvas id="pad" width="320" height="240"></canvas><div><label for="ribbonShape">Ribbon trajectory</label> <select id="ribbonShape" disabled><option value="ribbon">Ribbon</option><option value="crown">Crown · bright arc</option><option value="pendulum">Pendulum · dark sweep</option><option value="sketch" id="sketchOption" disabled>My sketch</option></select></div><details id="sketchEditor"><summary>Draw your own orbit (local sketch)</summary><p>Tap eight points in order. Apply replaces the saved sketch; it never starts a gate. Undo or clear changes only the draft.</p><canvas id="sketchPad" width="320" height="240" aria-label="Eight-point trajectory editor"></canvas><div><button id="sketchUndo" disabled>Undo point</button><button id="sketchClear" disabled>Clear draft</button><button id="sketchApply" disabled>Apply sketch</button></div><p id="sketchStatus" aria-live="polite">0 / 8 points</p></details><p id="state">Disconnected</p>
 <script src="/gesture.js"></script>
 <script>
 const pad=document.querySelector('#pad'),ctx=pad.getContext('2d'),status=document.querySelector('#state'),start=document.querySelector('#start');
@@ -8,6 +8,41 @@ let audio=null,bus=null,g=0,next=0,epoch=0,timer=null,pointer=null,connecting=fa
 const queue=new GestureQueue(),sources=new Set(),visuals=[];
 const ribbon=new GestureQueue.Ribbon(),speedControl=document.querySelector('#ribbonSpeed'),holdControl=document.querySelector('#holdGate'),shapeControl=document.querySelector('#ribbonShape');
 let held=false;
+const sketchPad=document.querySelector('#sketchPad'),sketchCtx=sketchPad.getContext('2d'),sketchStatus=document.querySelector('#sketchStatus'),sketchApply=document.querySelector('#sketchApply'),sketchUndo=document.querySelector('#sketchUndo'),sketchClear=document.querySelector('#sketchClear'),sketchOption=document.querySelector('#sketchOption');
+const draft=[];
+function showSketch(){
+  sketchOption.disabled=!ribbon.sketch;
+  sketchApply.disabled=draft.length!==8;sketchUndo.disabled=sketchClear.disabled=!draft.length;
+  sketchStatus.textContent=draft.length+' / 8 points'+(ribbon.sketch?' · saved sketch available':'');
+  sketchCtx.fillStyle='#171321';sketchCtx.fillRect(0,0,320,240);
+  function trace(points,color,closed){
+    if(!points.length)return;
+    sketchCtx.strokeStyle=color;sketchCtx.beginPath();
+    points.forEach(([x,y],i)=>{const px=x*319/127,py=(127-y)*239/127;if(i)sketchCtx.lineTo(px,py);else sketchCtx.moveTo(px,py)});
+    if(closed)sketchCtx.closePath();sketchCtx.stroke();
+    sketchCtx.fillStyle=color;
+    points.forEach(([x,y])=>{sketchCtx.beginPath();sketchCtx.arc(x*319/127,(127-y)*239/127,4,0,Math.PI*2);sketchCtx.fill()});
+  }
+  if(ribbon.sketch)trace(ribbon.sketch,'#81738a',true);
+  trace(draft,'#ffc67a',draft.length===8);
+}
+function addSketchPoint(x,y){
+  if(draft.length>=8||![x,y].every(v=>Number.isInteger(v)&&v>=0&&v<=127))return false;
+  draft.push([x,y]);showSketch();return true;
+}
+sketchPad.onpointerdown=e=>{
+  const r=sketchPad.getBoundingClientRect();
+  if(r.width<=0||r.height<=0)return;
+  addSketchPoint(Math.max(0,Math.min(127,Math.round((e.clientX-r.left)/r.width*127))),Math.max(0,Math.min(127,Math.round((1-(e.clientY-r.top)/r.height)*127))));
+};
+sketchUndo.onclick=()=>{draft.pop();showSketch()};
+sketchClear.onclick=()=>{draft.length=0;showSketch()};
+sketchApply.onclick=()=>{
+  if(draft.length!==8||pointer!==null||connecting)return;
+  ribbon.setSketch(draft);draft.length=0;
+  if(g)ribbon.setShape('sketch');
+  showSketch();showRibbon();
+};
 function showRibbon(){shapeControl.value=ribbon.shape;shapeControl.disabled=!g;speedControl.value=String(ribbon.speed);holdControl.disabled=!g||!ribbon.speed;holdControl.textContent=held?'Release gate':'Hold gate';holdControl.setAttribute('aria-pressed',String(held))}
 function clearRibbon(){ribbon.reset();held=false;showRibbon()}
 speedControl.onchange=()=>{if(!g||connecting||pointer!==null){showRibbon();return}const speed=Number(speedControl.value);if(!speed){stop();return}ribbon.setSpeed(speed);showRibbon()};
@@ -48,5 +83,5 @@ pad.onpointerup=e=>{if(pointer!==e.pointerId)return;pointer=null;ribbon.resume()
 pad.onpointercancel=pad.onlostpointercapture=e=>{if(pointer===e.pointerId)stop()};
 window.addEventListener('blur',stop);document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});document.querySelector('#panic').onclick=stop;
 document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{stop();event(3,Number(b.dataset.p))});
-ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);
+ctx.fillStyle='#171321';ctx.fillRect(0,0,320,240);showSketch();
 </script>
