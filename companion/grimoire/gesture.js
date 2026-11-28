@@ -22,14 +22,29 @@ class OrbitRibbon {
   });
   get path(){return this.shape==='sketch'?this.sketch:OrbitRibbon.shapes[this.shape];}
   // Eight performer-authored points, copied and frozen. Edits are atomic.
-  setSketch(points){
+  static validateSketch(points){
     if(!Array.isArray(points)||points.length!==8)throw RangeError('sketch points');
     const copy=[];
     for(const point of points){
       if(!Array.isArray(point)||point.length!==2||!Number.isInteger(point[0])||!Number.isInteger(point[1])||point[0]<0||point[0]>127||point[1]<0||point[1]>127)throw RangeError('sketch XY');
       copy.push(Object.freeze([point[0],point[1]]));
     }
-    this.sketch=Object.freeze(copy);
+    return Object.freeze(copy);
+  }
+  // Bounded local interchange; deliberately contains no gate, speed or session.
+  static decodeSketch(text){
+    if(typeof text!=='string'||text.length>512)throw RangeError('sketch document length');
+    const d=JSON.parse(text);
+    if(!d||typeof d!=='object'||Array.isArray(d)||Object.keys(d).length!==3||
+       d.format!=='grimoire.orbit-sketch'||d.version!==1||!Object.hasOwn(d,'points'))
+      throw RangeError('sketch document format');
+    return OrbitRibbon.validateSketch(d.points);
+  }
+  static encodeSketch(points){
+    return JSON.stringify({format:'grimoire.orbit-sketch',version:1,points:OrbitRibbon.validateSketch(points)});
+  }
+  setSketch(points){
+    this.sketch=OrbitRibbon.validateSketch(points);
     if(this.shape==='sketch'&&this.speed&&!this.manual)this.beginBlend();
   }
   setShape(shape){

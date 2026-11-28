@@ -29,3 +29,13 @@ assert.equal(vm.runInContext('held&&ribbon.speed===2&&ribbon.path[7][0]===70',sa
 vm.runInContext('addSketchPoint(10,10);sketchClear.onclick();clearRibbon()',sandbox);
 assert.equal(vm.runInContext('draft.length===0&&ribbon.shape==="ribbon"&&ribbon.speed===0&&!held&&ribbon.sketch[7][0]===70',sandbox),true);
 console.log('Actual page JS: bounded sketch draft, incomplete rejection, undo, apply and inert saved sketch after panic PASS (DOM stub)');
+
+vm.runInContext('g=9;ribbon.setSpeed(2);held=true;ribbon.setShape("sketch");sketchExport.onclick();globalThis.savedText=sketchExchange.value;globalThis.oldSketch=ribbon.sketch;globalThis.oldPhase=ribbon.phase;addSketchPoint(12,13);sketchExchange.value="{bad";sketchImport.onclick()',sandbox);
+assert.equal(vm.runInContext('draft.length===1&&ribbon.sketch===oldSketch&&held&&ribbon.phase===oldPhase',sandbox),true);
+vm.runInContext('sketchExchange.value=GestureQueue.Ribbon.encodeSketch(Array(8).fill([33,77]));sketchImport.onclick()',sandbox);
+assert.equal(vm.runInContext('draft.length===8&&draft[0][0]===33&&ribbon.sketch===oldSketch&&held&&ribbon.phase===oldPhase&&queue.length===0',sandbox),true);
+vm.runInContext('sketchApply.onclick()',sandbox);
+assert.equal(vm.runInContext('ribbon.sketch[0][0]===33&&ribbon.blend===8&&ribbon.phase===oldPhase&&held&&queue.length===0',sandbox),true);
+vm.runInContext('clearRibbon();sketchExchange.value=savedText;sketchImport.onclick()',sandbox);
+assert.equal(vm.runInContext('!held&&ribbon.speed===0&&ribbon.shape==="ribbon"&&draft.length===8&&queue.length===0',sandbox),true);
+console.log('Actual page JS: import is draft-only, malformed import atomic, explicit apply and inert post-panic import PASS (DOM stub)');

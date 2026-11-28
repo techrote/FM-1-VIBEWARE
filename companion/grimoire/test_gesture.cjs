@@ -88,3 +88,25 @@ function checkSketch(R){
   return blocks;
 }
 console.log('Orbit Ribbon sketches: '+checkSketch(GestureQueue.Ribbon)+' bounded blocks; atomic validation, editing, manual takeover and panic PASS');
+
+// Local JSON exchange is inert until explicitly applied by the performance UI.
+function checkExchange(R){
+  const assert=(c,m)=>{if(!c)throw Error(m)};
+  let cases=0;
+  for(let i=0;i<128;i++){
+    const points=Array.from({length:8},(_,j)=>[(i+j*19)%128,(127-i+j*11)%128]);
+    const doc=R.encodeSketch(points),copy=R.decodeSketch(doc);
+    assert(doc.length<=512&&JSON.stringify(copy)===JSON.stringify(points),'round trip');
+    assert(Object.isFrozen(copy)&&copy.every(Object.isFrozen),'immutable decoded path');
+    const a=new R(),b=new R();a.setSketch(points);b.setSketch(copy);
+    a.setShape('sketch');b.setShape('sketch');a.setSpeed(4);b.setSpeed(4);
+    for(let k=0;k<128;k++)assert(a.block().join()===b.block().join(),'same performance');
+    cases++;
+  }
+  const good={format:'grimoire.orbit-sketch',version:1,points:Array(8).fill([20,80])};
+  for(const bad of [null,{},'','x'.repeat(513),'null','[]','{',JSON.stringify({...good,version:2}),JSON.stringify({...good,format:'other'}),JSON.stringify({...good,gate:1}),JSON.stringify({...good,speed:4}),JSON.stringify({...good,points:Array(8).fill([128,0])}),JSON.stringify({...good,points:Array(9).fill([0,0])}),JSON.stringify({...good,points:Array(8).fill([0,0.5])}),JSON.stringify({...good,points:Array(8).fill(['0',0])})]){
+    let rejected=false;try{R.decodeSketch(bad)}catch{rejected=true}assert(rejected,'invalid exchange accepted');cases++;
+  }
+  return cases;
+}
+console.log('Orbit Sketch JSON exchange: '+checkExchange(GestureQueue.Ribbon)+' documents, 16384 matching trajectory blocks PASS');

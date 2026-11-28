@@ -115,6 +115,17 @@
   "fixture": {
     "max_pending_events": 16,
     "idle_lease_seconds": 1.5,
-    "overflow": "discard pending events and panic"
+    "overflow": "discard pending events and panic",
+    "sketch_exchange": {
+      "format": "grimoire.orbit-sketch",
+      "version": 1,
+      "max_text_characters": 512,
+      "points": 8,
+      "coordinate_range": [
+        0,
+        127
+      ],
+      "scope": "local authoring document only; import to draft, explicit Apply; no gate, speed or session state"
+    }
   }
 }
