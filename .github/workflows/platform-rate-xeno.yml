@@ -1,0 +1,78 @@
+name: PLATFORM Xenoresonator USB rate experiment
+on:
+  pull_request:
+    paths:
+      - 'platform/emulator/rate_xeno.py'
+      - 'platform/emulator/rate_linear.h'
+      - '.github/workflows/platform-rate-xeno.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  usb-rate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        rate: [hold, linear]
+    env:
+      RATE_MODE: ${{ matrix.rate }}
+      CYDAUX_REF: 7a8ce4be817ccc85ae22f982df98baa701b8176a
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 3449ead4dd13d91ba0a57262a48349f38d6c465c
+          path: usb-reference
+          persist-credentials: false
+      - name: Validate frozen sources and prepare isolated converter variant
+        run: |
+          set -euo pipefail
+          python3 platform/emulator/rate_xeno.py --test
+          mkdir -p usb-reference/companion-results
+          python3 platform/emulator/rate_xeno.py prepare usb-reference platform/emulator/rate_linear.h "$RATE_MODE" | tee usb-reference/companion-results/rate-provenance.json
+          if [[ "$RATE_MODE" == linear ]]; then
+            git -C usb-reference add platform/companion/xeno_app.c platform/emulator/rate_linear.h
+            git -C usb-reference -c user.name='VIBEWARE experiment' -c user.email='experiment@invalid' commit -m 'Private emulator-only interpolation variant'
+          fi
+          git rev-parse HEAD > usb-reference/companion-results/experiment-source.txt
+      - name: Execute unchanged frozen companion qualification (both clock models)
+        run: bash usb-reference/platform/companion/ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xeno-usb-rate-${{ matrix.rate }}
+          path: usb-reference/companion-results/
+          if-no-files-found: error
+          retention-days: 14
+  compare:
+    needs: usb-rate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: xeno-usb-rate-hold
+          path: hold
+      - uses: actions/download-artifact@v4
+        with:
+          name: xeno-usb-rate-linear
+          path: linear
+      - name: Validate matched actual PCM, USB lifecycle and target counters
+        run: |
+          set -euo pipefail
+          python3 platform/emulator/rate_xeno.py report hold linear | tee xeno-rate-summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xeno-usb-rate-comparison
+          path: xeno-rate-summary.json
+          if-no-files-found: error
+          retention-days: 14
