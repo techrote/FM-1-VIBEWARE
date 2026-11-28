@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      CYDAUX_REF: ${{ inputs.cydaux_ref || 'b33830ef50c52663d83a69bb1e5f25b109bc9053' }}
+      CYDAUX_REF: ${{ inputs.cydaux_ref || '5c3d7960ee76132cca95c92394010403f8bd638f' }}
     steps:
       - uses: actions/checkout@v4
         with:
