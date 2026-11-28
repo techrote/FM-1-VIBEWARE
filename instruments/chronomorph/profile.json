@@ -56,7 +56,8 @@
       }
     ],
     "editing": "local reversible cyclic rotation and evenly spaced density fill; resulting length/mask only, no new wire command",
-    "scenes": "Four local volatile scene slots capture BPM/warp/variation and all length/mask pairs. Recall atomically at next local block, preserving session, transport, seed and clocks; no wire command."
+    "scenes": "Four local volatile scene slots capture BPM/warp/variation and all length/mask pairs. Recall atomically at next local block, preserving session, transport, seed and clocks; no wire command.",
+    "liveScore": "Lattice Variations local playback: four fixed factory cues, 100 accepted 50 ms blocks each, existing session/clock preserved; manual controls, scene recall, pause or disconnect cancel; auto-pause after 400 blocks. No wire command."
   },
   "events": [
     "start",
