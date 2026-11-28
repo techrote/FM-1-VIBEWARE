@@ -98,3 +98,34 @@ All browser requests, including open, render, memory and panic, have a 1.2-secon
 ### Render receipt validation
 
 Before updating material controls or scheduling audio, the native browser checks the exact 3,200-character unpadded PCM base64 envelope (1,200 signed 16-bit mono samples), six integer modal magnitudes in 0–131,070 (two bounded state components), and valid returned material for memory-render requests, even when readback was superseded by manual edits. A malformed receipt invokes the existing local panic, clears scheduled audio and requires an explicit reconnect. The Chromium regression corrupts actual native responses while holding a note and checks no extra source scheduling, native panic, stale-session rejection, silence and fresh recovery. This is local host safety, not physical or transport qualification.
+
+### Sample-clock material trajectory (portable target consumer seam)
+
+`sample_morph.h` provides an optional one-shot A/B trajectory using a detached
+copy of the native material bank. Choose start and end positions 0–127 and
+1–1200 intervals of 120 core samples (5 ms at 24 kHz). The final position is
+applied exactly at the end boundary; subsequent samples retain that material.
+Arbitrary render partitions are supported, with no clock, allocation or implicit
+note/reset events. Material switches at position 64 as before (not continuous
+modal-coefficient interpolation). Caller owns a single serialized audio state,
+cancels before manual material edits/reset/panic, and flushes any downstream
+cached audio as appropriate. Notes and releases may occur independently.
+No wire, browser or shared target change; this is a portable seam for PLATFORM.
+
+Build and run:
+```
+gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c test_sample_morph.c -o sample-morph
+./sample-morph
+gcc -std=c11 -O2 -Wall -Wextra -Werror xeno.c morph_demo.c -o morph-demo
+./morph-demo fixed.wav forward.wav reverse.wav
+```
+Actual local GCC and Clang nonrecovering UBSan each passed 194 complete PCM/state
+comparisons (16 ordered material pairs, two directions, three durations and two
+seeds, plus partial-range maximum duration and stationary controls), 168 audible
+signal differences versus fixed-start controls (measured PCM, not listening),
+manual takeover, release, invalid arm, detached bank and silent panic. Trace
+1016b926, 20 bytes host performer state. Three matched six-second native WAVs
+with ten explicit strikes, forward/reverse 4 s sweeps and 1 s panic tail are
+byte-identical between compilers. Peaks 6314/6305/6309; all tails zero. Existing
+host controls remain unchanged. Target runtime integration, actual virtual
+execution and independent QA are still pending for this feature. Physical HOLD.
