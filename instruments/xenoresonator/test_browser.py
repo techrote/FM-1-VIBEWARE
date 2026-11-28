@@ -372,6 +372,56 @@ try:
         page.click('#stop')
         silent()
         print('PASS held-note deadline, native panic/stale session, late response quarantine and actual audio recovery')
+        # Corrupt actual completed native receipts, one per live session.
+        # A rejected receipt must not schedule even one extra AudioBufferSource.
+        for field,value,message in [('levels',None,'Modal receipt'),
+                                    ('levels',[0,0,131071,0,0,0],'Modal receipt'),
+                                    ('pcm','?'*3200,'PCM format')]:
+            fresh(90)
+            page.locator('#strike').hover()
+            gesture(page.mouse.down,1)
+            wait("window.xenoProbe.peak>0.0001 && window.xenoProbe.bodyB>0")
+            old_token=page.evaluate('token')
+            with page.expect_response(lambda r:r.url==url+'/panic' and
+                    r.request.method=='POST' and r.request.post_data_json['token']==old_token) as panic:
+                page.evaluate("""([field,value]) => {
+                  const original=window.fetch;
+                  window.badReceiptScheduled=0;
+                  const create=AudioContext.prototype.createBufferSource;
+                  AudioContext.prototype.createBufferSource=function(...args){
+                    if(window.badReceiptDelivered)window.badReceiptScheduled++;
+                    return create.apply(this,args);
+                  };
+                  window.fetch=async (...args)=>{
+                    const response=await original(...args);
+                    if(args[0]!=='/block')return response;
+                    window.fetch=original;
+                    const data=await response.json();
+                    data[field]=value;
+                    window.badReceiptDelivered=true;
+                    return {ok:true,json:async()=>data};
+                  };
+                  window.restoreReceiptProbe=()=>{
+                    AudioContext.prototype.createBufferSource=create;
+                    window.badReceiptDelivered=false;
+                  };
+                }""",[field,value])
+                wait(f"$('status').textContent.includes('{message}') && !active")
+            assert panic.value.ok and panic.value.json()['muted'] is True
+            silent()
+            assert page.evaluate('window.badReceiptScheduled===0 && pointer===null && heldKey===null')
+            page.evaluate('window.restoreReceiptProbe()')
+            page.mouse.up()
+            stale=page.request.post(url+'/block',data={'token':old_token,'seq':0})
+            assert stale.status==409 and stale.json()['error']=='stale session'
+        fresh(90)
+        page.locator('#strike').hover()
+        gesture(page.mouse.down,1)
+        wait("window.xenoProbe.peak>0.0001 && window.xenoProbe.bodyB>0")
+        gesture(page.mouse.up,2)
+        page.click('#stop')
+        silent()
+        print('PASS malformed native modal/PCM receipts fail closed before audio scheduling and recover')
         assert not errors,errors
         print('PASS Chromium actual audio, modal coupling, XY, input ownership, panic, fault and reconnect',coupled)
         browser.close()
