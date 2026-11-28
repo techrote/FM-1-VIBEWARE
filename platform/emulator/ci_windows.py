@@ -27,7 +27,7 @@ URL = 'https://github.com/jvitkauskas/pi32v2-llvm/releases/download/pi32v2-23.1.
 CORES = {
     'grimoire': ('core', '03102e8d82148a6dba871024f5944246e0c913e2', 'orbit', 'grimoire'),
     'ecophon': ('ecophon_core', 'acdc41839665271372cd69df1d09f5550556c87e', 'ecophon', 'ecophon'),
-    'chronomorph': ('chronomorph_core', 'be57d9f77e9325271adbd4558dfd554c6cd81e19', 'chrono', 'chrono'),
+    'chronomorph': ('chronomorph_core', '5fbc99d2c12055ea11aa8ab8f33ac62233a6499d', 'chrono', 'chrono'),
 }
 BASE = '600-700:N3,900-1000:PLAY,3600-3700:HOME'
 PRESET = '600-700:N3,900-1000:PLAY,1700-1900:SCL,3600-3700:HOME'
@@ -108,7 +108,7 @@ def build_target(name, work, dinghy, tc, results):
     clang = tc / 'clang.exe'
     flags = ['-target', 'pi32v2', '-mcpu=ac791n']
     app, dsp = work / (name + '-app.o'), work / (name + '-core.o')
-    run([clang, *flags, '-Os', '-ffunction-sections', '-fno-builtin', '-Wall', '-Wno-unused-function', '-Ifirmware/hal', '-Ifirmware/src', '-Ifirmware/gen', '-I'+str(src), '-I'+str(HERE), '-DAPP_VER="dev"', '-DFELUCCA_ID="FM-1_990"', '-c', 'firmware/src/dinghy.c', '-o', app], dinghy, results / (name + '-compile-app.txt'))
+    run([clang, *flags, '-Os', '-ffunction-sections', '-fno-builtin', '-Wall', '-Wno-unused-function', '-Ifirmware/hal', '-Ifirmware/src', '-Ifirmware/gen', '-I'+str(src), '-I'+str(HERE), *(['-I'+str(HERE / 'include')] if name == 'chronomorph' else []), '-DAPP_VER="dev"', '-DFELUCCA_ID="FM-1_990"', '-c', 'firmware/src/dinghy.c', '-o', app], dinghy, results / (name + '-compile-app.txt'))
     run([clang, *flags, '-Os', '-ffreestanding', '-fno-builtin', '-ffunction-sections', '-I'+str(HERE / 'include'), '-Wall', '-Wextra', '-Werror', '-c', src / (engine + '.c'), '-o', dsp], dinghy, results / (name + '-compile-core.txt'))
     objs = []
     for source in ('firmware/crt0.S', 'firmware/hal/fm1_vec.S', 'firmware/hal/fm1_isr.S'):
