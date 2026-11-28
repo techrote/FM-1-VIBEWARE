@@ -159,16 +159,18 @@ run_chronomorph() (
 trap - EXIT
 set -e
 # Third consumer. Preserve all gates while collecting independent evidence.
-CHRONO=be57d9f77e9325271adbd4558dfd554c6cd81e19
+CHRONO=5fbc99d2c12055ea11aa8ab8f33ac62233a6499d
 checkout https://github.com/techrote/FM-1-VIBEWARE.git "$TMP/chrono-core" "$CHRONO"
 ENGINE="$TMP/chrono-core/instruments/chronomorph"
 printf 'chronomorph_core=%s\n' "$CHRONO" >> "$RES/pins.txt"
 for cc in gcc clang; do
   "$cc" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -O2 -I"$ENGINE" "$HERE/test_chrono_runtime.c" "$ENGINE/chrono.c" -o "$TMP/test-chrono"
   "$TMP/test-chrono" | tee "$RES/chronomorph-adapter-$cc.txt"
+  "$cc" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -O2 -I"$ENGINE" "$HERE/test_chrono_performance_rate.c" "$ENGINE/chrono.c" -o "$TMP/test-chrono-performance-rate"
+  "$TMP/test-chrono-performance-rate" | tee "$RES/chronomorph-performance-rate-$cc.txt"
 done
 cp "$HERE/chrono_app.c" firmware/src/dinghy.c
-"$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffunction-sections -fno-builtin -Wall -Wno-unused-function -Ifirmware/hal -Ifirmware/src -Ifirmware/gen -I"$ENGINE" -I"$HERE" -DAPP_VER='"dev"' -DFELUCCA_ID='"FM-1_990"' -c firmware/src/dinghy.c -o "$TMP/chrono-app.o"
+"$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffunction-sections -fno-builtin -Wall -Wno-unused-function -Ifirmware/hal -Ifirmware/src -Ifirmware/gen -I"$ENGINE" -I"$HERE" -I"$HERE/include" -DAPP_VER='"dev"' -DFELUCCA_ID='"FM-1_990"' -c firmware/src/dinghy.c -o "$TMP/chrono-app.o"
 "$TC/clang" -target pi32v2 -mcpu=ac791n -Os -ffreestanding -fno-builtin -ffunction-sections -I"$HERE/include" -Wall -Wextra -Werror -c "$ENGINE/chrono.c" -o "$TMP/chrono.o"
 "$TC/ld.lld" --gc-sections -e _start -T firmware/app.ld -Map="$RES/chronomorph.map" "$TMP/crt0.o" "$TMP/fm1_vec.o" "$TMP/fm1_isr.o" "$TMP/chrono-app.o" "$TMP/chrono.o" -o "$TMP/chronomorph.elf"
 "$TC/llvm-readelf" -h -l "$TMP/chronomorph.elf" | tee "$RES/chronomorph-elf.txt"
