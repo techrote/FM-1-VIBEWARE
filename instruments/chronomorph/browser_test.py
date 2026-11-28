@@ -273,6 +273,41 @@ with Server(("127.0.0.1",0),Handler) as s:
             page.get_by_role("button",name="Export scenes",exact=True).click()
             assert json.loads(page.locator("#sceneExchange").input_value())["slots"]==[None]*4
             page.get_by_role("button",name="Panic / disconnect",exact=True).click()
+            # Fault-inject actual native HTTP responses after native execution.
+            # The malformed response must never schedule its PCM, even for a score.
+            for kind in ("clock","score"):
+                page.evaluate("""kind=>{
+                    const original=window.fetch;
+                    window.corruption=null;
+                    window.fetch=async (url,options)=>{
+                        const r=await original(url,options);
+                        if(r.ok&&url===(kind==='clock'?'/block':'/score/block')){
+                            const data=await r.json();
+                            if(kind==='clock')data.lanes[0][3]=4;
+                            else data.frame.controls.bpm=221;
+                            window.corruption={starts:window.witness.starts,
+                                token:JSON.parse(options.body).token};
+                            window.fetch=original;
+                            return new Response(JSON.stringify(data),{status:200,
+                                headers:{'Content-Type':'application/json'}});
+                        }
+                        return r;
+                    };
+                }""",kind)
+                page.get_by_role("button",name="Start / resume",exact=True).click()
+                if kind=="score":
+                    page.wait_for_function("token!==null && playing===1 && seq>2")
+                    page.get_by_role("button",name="Perform Lattice Variations",exact=True).click()
+                page.wait_for_function("window.corruption!==null && token===null && playing===0")
+                assert page.evaluate("window.witness.starts===window.corruption.starts")
+                assert page.locator(".current").count()==0
+                assert "mismatch" in page.locator("#status").inner_text()
+                old=page.evaluate("window.corruption.token")
+                page.wait_for_timeout(180)
+                assert page.evaluate("window.witness.starts===window.corruption.starts")
+                page.get_by_role("button",name="Start / resume",exact=True).click()
+                page.wait_for_function("old=>token!==null && token!==old && window.witness.starts>window.corruption.starts",arg=old)
+                page.get_by_role("button",name="Panic / disconnect",exact=True).click()
             assert not errors,errors
             print("Chromium actual native PCM scheduling, visual clocks, live controls, pause/resume, panic and reconnect PASS",page.evaluate("window.witness"))
             browser.close()
