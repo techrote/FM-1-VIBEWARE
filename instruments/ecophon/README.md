@@ -114,3 +114,15 @@ cc -std=c11 -O2 -Wall -Wextra -Werror ecophon.c test_environment_memory.c -o tes
 ```
 
 Local GCC and Clang nonrecovering UBSan builds passed 2,621,440 interpolation positions, invalid input and cancellation cases, and 1,140 actual-core 100 ms PCM/state block comparisons against a separately calculated smooth/manual-takeover schedule across all three regimes. The helper occupied 20 bytes on the tested Linux host (not target ABI evidence); all panic-tail samples were exactly zero. Hosted Windows/Linux regression added; independent reproduction remains required for this successor. This is an integration candidate for the shared CYDaux worker, not yet wired into CYDaux, the FM-1 target or the existing browser. Standalone/basic MIDI/enhanced and physical gates are unchanged.
+
+
+### Native memory consumer in the existing local audition fixture
+
+The fixture now exports three optional native calls: `int ecof_memory_capture(unsigned slot)`, `int ecof_memory_recall(unsigned slot)` (0=A, 1=B), and `int ecof_memory_step(int16_t *pcm, uint32_t *snap)`. The latter requires the existing 2400-sample and 56-word buffers and returns 56 on a rendered block or 0 on rejection. Capture and recall return 1 on acceptance, 0 otherwise. The existing direct step remains the manual override: valid direct steps cancel recall and set freeze; rejected requests do not advance either state. Reset cancels recall and retains slots within the process; freeze cancels and blocks recall; panic cancels and rejects native memory commands/steps until reset. The existing explicit direct step retains its post-panic silent-render behavior for legacy witnesses. The caller must serialize and validate session generations; there is no new transport, telemetry claim, browser behavior or FM-1 target change. These entrypoints are provisional local fixture functions, not a device ABI. Rebuilding the fixture now requires environment_memory.h, included with the source packages.
+
+```sh
+cc -std=c11 -O2 -Wall -Wextra -Werror ecophon.c fixture.c test_memory_consumer.c -o test-consumer
+./test-consumer
+```
+
+Local Linux GCC and Clang nonrecovering UBSan passed 660 exact PCM and 56-word snapshot block comparisons across all three factory regimes, smooth recall and manual takeover; invalid pointers/slots/controls do not advance, overwrite during recall stays detached, freeze/unfreeze and panic/restart checked. A separate local comparison against exact predecessor fixture blob 93c6ba94a6340cdd4054fe642c346abf94588f5c verified 400 deterministic explicit-control PCM/snapshot blocks (including all four presets and 40 silent panic-tail blocks). Existing PCM digest gates remain unchanged. Hosted successor and independent QA are pending; basic MIDI/enhanced and physical remain unqualified. This is a concrete local native consumer for coordinated CYDAUX/PLATFORM adoption, not a competing runtime.
