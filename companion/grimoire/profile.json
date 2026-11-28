@@ -150,6 +150,35 @@
       "default": 1,
       "transition": "preserves phase, carry, current XY, manual state and blend; subsequent ticks advance signed direction",
       "reset": "forward and automation off on panic/disconnect"
+    },
+    "native_ribbon_endpoint": {
+      "scope": "local native audition API only; not device telemetry or a wire contract",
+      "version": 1,
+      "request_kind": "ribbon",
+      "actions": {
+        "shape": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "speed": [
+          1,
+          2,
+          4
+        ],
+        "direction": [
+          1,
+          -1
+        ],
+        "sketch": "eight integer XY pairs in 0..127",
+        "resume": "manual takeover ends with eight-tick blend",
+        "stop": "automation off, current XY and gate retained",
+        "state": "read-only, does not renew session lease"
+      },
+      "audio": "1200 frame block includes native controller snapshot; automation off by default",
+      "lifecycle": "XY while active takes manual ownership; preset and panic stop automation; reconnect or expiry clears native sketch and automation; invalid requests do not renew lease",
+      "browser": "legacy browser clock remains in use until separately migrated"
     }
   }
 }
