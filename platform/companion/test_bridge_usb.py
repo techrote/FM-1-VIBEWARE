@@ -361,6 +361,18 @@ def main():
         assert last[6] in (3, 5, 6, 7), last
         seq = last[11] | last[12] << 7
         retry_seq = (seq + 8191) & 16383
+        # A malformed forward-sequence operation would consume target
+        # sequence even when rejected by the C endpoint. The bridge must
+        # refuse it before USB, or its emergency Panic could become stale.
+        def malformed_packet(op, payload):
+            packet = list(last[:13]) + [len(payload), *payload, 247]
+            packet[6] = op
+            packet[11], packet[12] = retry_seq & 127, retry_seq >> 7
+            return packet
+        for op, payload in ((5, [0]), (10, []), (8, [1])):
+            route.reject_command({"type": "midi",
+                                  "data": malformed_packet(op, payload)})
+        witnesses["malformed_cy1_bridge_refusals"] = 3
         retry = list(last[:13]) + [1, PROFILE_ID, 247]
         retry[6] = 1
         retry[11], retry[12] = retry_seq & 127, retry_seq >> 7
