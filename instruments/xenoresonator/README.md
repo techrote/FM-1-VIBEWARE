@@ -59,3 +59,28 @@ combination with an independent signed-delta formula, exercise all sixteen
 ordered material pairs and compare actual core PCM and state with direct controls.
 Invalid requests are rejected without mutation. This is a host semantic fixture,
 not target execution, negotiated MIDI support or device telemetry.
+
+### Native local material-memory HTTP controls
+
+The same `live.py` loopback session now exposes native A/B memory to local
+controllers. Open with `POST /open` and `{ "version": 1 }`; use the returned
+`token` and the same monotonically increasing `seq` as `/block` (starting at
+zero). Send JSON to `/memory` with `op` equal to `inspect`, `clear`,
+`capture` (integer `slot` 0 or 1), or `store` (`slot`, `p`, `e`, `d`, `c`).
+These commands return actual native `slots` (null for empty) and current
+`patch`, without rendering or applying a stored patch. Send `/memory-block`
+with `op: recall` and `slot`, or `op: morph` and integer `position` 0–127.
+These commands render exactly one 50 ms block and return `pcm`, `levels`,
+`patch` and `seq`; no implicit strike or release. For note events use the
+existing `/block` with the returned current patch and desired note/velocity.
+All successful memory commands consume one sequence number; failed requests
+consume none. Serialize them with audio blocks. Panic/expiry invalidate the
+session; stored patches survive reset/reopen, but are never automatically
+applied. This is an explicitly local, single-owner fixture, not a shared
+transport or device telemetry. The existing browser still uses its page-local
+memory; migration to these native operations is a separate follow-up.
+
+`test_live.py` covers all sixteen ordered material pairs, actual PCM/modal
+identity against direct controls, slot readback, invalid/stale commands and
+silent reconnects. This is host-only qualification; target and physical gates
+are unchanged.
