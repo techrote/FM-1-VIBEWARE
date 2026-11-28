@@ -41,10 +41,11 @@ jobs:
           python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('out/orbit-replay.json').read_bytes()).hexdigest() == '6793ac69399a826931713f01375803bafceab3ad99c9308774689362761db43a'"
           python companion/grimoire/smoke.py out/orbit.$ext
           python companion/grimoire/test_ribbon_endpoint.py out/orbit.$ext
+          python companion/grimoire/test_socket_lifecycle.py out/orbit.$ext
           node companion/grimoire/test_gesture.cjs
           node companion/grimoire/test_visual.cjs
           python -c "import hashlib,pathlib; p=pathlib.Path('out'); [(print(f.name,hashlib.sha256(f.read_bytes()).hexdigest())) for f in sorted(p.glob('*.wav'))]"
-          cp companion/grimoire/{host.py,index.html,smoke.py,test_ribbon_endpoint.py,replay.py,sketch_replay.py,gesture.js,profile.json,test_gesture.cjs,test_visual.cjs,test_browser.py} out/
+          cp companion/grimoire/{host.py,index.html,smoke.py,test_ribbon_endpoint.py,test_socket_lifecycle.py,replay.py,sketch_replay.py,gesture.js,profile.json,test_gesture.cjs,test_visual.cjs,test_browser.py} out/
           python out/smoke.py out/orbit.$ext
           node out/test_gesture.cjs
           node out/test_visual.cjs
@@ -56,6 +57,7 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then ext=dll; else ext=so; fi
           python smoke.py "orbit.$ext"
           python test_ribbon_endpoint.py "orbit.$ext"
+          python test_socket_lifecycle.py "orbit.$ext"
           node test_gesture.cjs
           node test_visual.cjs
           python sketch_replay.py "orbit.$ext" ../sketch-out
