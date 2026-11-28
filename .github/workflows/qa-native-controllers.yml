@@ -1,0 +1,167 @@
+name: QA native memory and trajectory controllers
+on:
+  pull_request:
+    paths: ['.github/workflows/qa-native-controllers.yml','qualification/qa_scene.c']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - instrument: xeno
+            os: ubuntu-24.04
+            pin: 4bd009edfb4952e4ce99fb2eeefb64ae4163a21e
+            artifact: 15252869880
+            digest: 12cb7f3e3a34a23088d97cdfbc4d2f4e6ae27db05f0b644812967d0d7aafef33
+          - instrument: xeno
+            os: windows-latest
+            pin: 4bd009edfb4952e4ce99fb2eeefb64ae4163a21e
+            artifact: 15253905341
+            digest: 1fe0b7c25b56f75a0625dffbb417d2dc261b8b0d30dbdf519d54f3e2ab520e16
+          - instrument: chrono
+            os: ubuntu-24.04
+            pin: 6fd61c46c014870f4f9a8f40cf0f351141d22611
+            artifact: 15251437980
+            digest: c0829cd79134caaad7d4759d20fb6d0bcee5a46f09d36141891ca50abbb4fe09
+          - instrument: chrono
+            os: windows-latest
+            pin: 6fd61c46c014870f4f9a8f40cf0f351141d22611
+            artifact: 15251338416
+            digest: 6e074125bacd4372b1152364707028cd0102ee7680b6e5a1c017bc00a6e092cc
+          - instrument: eco
+            os: ubuntu-24.04
+            pin: 0fdaddd2169513033703a1078055435fee9f6726
+            artifact: 15253908572
+            digest: 8f5fea7dc76e66ca73633b55d12af22760d4ca42527c4de49d2c5724a63c3508
+          - instrument: eco
+            os: windows-latest
+            pin: 0fdaddd2169513033703a1078055435fee9f6726
+            artifact: 15253463276
+            digest: 9a15414f79ed08a0071d757c0c42e521b5fc6fe9929af13d84c6fd06b9892b46
+          - instrument: grimoire
+            os: ubuntu-24.04
+            pin: c4d5256f56bdd1a8e0494b76e29daafec9d603d2
+            artifact: 15254217830
+            digest: 8c0619eb8329b6123ad9c485fb38e533e64a78ac90e8dd59b89a6d000759e69f
+          - instrument: grimoire
+            os: windows-latest
+            pin: c4d5256f56bdd1a8e0494b76e29daafec9d603d2
+            artifact: 15254292481
+            digest: cae9b54b5ff78dd8d91ee9253c7232e05f650f5c04ce77a47bfca00815e712ad
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.pin }}
+          path: frozen
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rebuild exact controllers and exercise pinned original artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIN: ${{ matrix.pin }}
+          ARTIFACT: ${{ matrix.artifact }}
+          DIGEST: ${{ matrix.digest }}
+          INSTRUMENT: ${{ matrix.instrument }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen rev-parse HEAD)" = "$PIN"
+          mkdir -p receipts 'extracted controller'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > original.zip
+          python - <<'PY'
+          import hashlib, os, stat, zipfile
+          from pathlib import Path, PurePosixPath
+          p=Path('original.zip')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==os.environ['DIGEST']
+          with zipfile.ZipFile(p) as z:
+              names=z.namelist()
+              assert len(names)==len(set(n.casefold() for n in names))
+              assert sum(i.file_size for i in z.infolist()) < 100_000_000
+              for i in z.infolist():
+                  n=i.filename
+                  assert n and not n.startswith('/') and chr(92) not in n and ':' not in n
+                  assert all(x not in ('','..','.') for x in n.rstrip('/').split('/'))
+                  assert not stat.S_ISLNK(i.external_attr >> 16)
+              z.extractall('extracted controller')
+          PY
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror)
+          libflags=(-shared)
+          if [ "$RUNNER_OS" = Windows ]; then
+            libflags+=(-Wl,--export-all-symbols)
+          else
+            flags+=(-fsanitize=undefined -fno-sanitize-recover=all)
+            libflags+=(-fPIC)
+          fi
+          pkg='extracted controller'
+          case "$INSTRUMENT" in
+            xeno)
+              c=frozen/instruments/xenoresonator
+              for f in xeno.c xeno.h live_bridge.c material_memory.h test_material_memory.c test_memory_consumer.py; do cmp "$pkg/$f" "$c/$f"; done
+              gcc "${flags[@]}" "$c/xeno.c" "$c/test_material_memory.c" -o fresh.exe
+              ./fresh.exe | tee receipts/controller.log
+              gcc "${flags[@]}" "${libflags[@]}" "$c/xeno.c" "$c/live_bridge.c" -o fresh.dll
+              python "$c/test_memory_consumer.py" fresh.dll | tee receipts/fresh.log
+              python "$pkg/test_memory_consumer.py" "$pkg/live.dll" | tee receipts/extracted.log
+              cmp receipts/fresh.log receipts/extracted.log
+              ;;
+            chrono)
+              c=frozen/instruments/chronomorph
+              for f in chrono.c chrono.h scene_memory.h test_scene_memory.c; do cmp "$pkg/$f" "$c/$f"; done
+              gcc "${flags[@]}" "$c/chrono.c" "$c/test_scene_memory.c" -o author.exe
+              ./author.exe | tee receipts/author.log
+              gcc "${flags[@]}" -I"$c" "$c/chrono.c" qualification/qa_scene.c -o fresh.exe
+              ./fresh.exe | tee receipts/fresh.log
+              gcc "${flags[@]}" -I"$pkg" "$pkg/chrono.c" qualification/qa_scene.c -o "$pkg/qa-scene.exe"
+              (cd "$pkg" && ./qa-scene.exe) | tee receipts/extracted.log
+              cmp receipts/fresh.log receipts/extracted.log
+              grep -Fx 'QA scene: 21600 blocks, 20357 sounding, 43200 rejected operations, 90 silent cancellations' receipts/fresh.log
+              ;;
+            eco)
+              c=frozen/instruments/ecophon
+              for f in ecophon.c ecophon.h fixture.c environment_memory.h test_environment_memory.c test_memory_consumer.c live.py test_memory_http.py; do cmp "$pkg/$f" "$c/$f"; done
+              gcc "${flags[@]}" "$c/ecophon.c" "$c/test_environment_memory.c" -o memory.exe
+              ./memory.exe | tee receipts/controller.log
+              gcc "${flags[@]}" "$c/ecophon.c" "$c/fixture.c" "$c/test_memory_consumer.c" -o fresh.exe
+              ./fresh.exe | tee receipts/consumer.log
+              gcc "${flags[@]}" "${libflags[@]}" "$c/ecophon.c" "$c/fixture.c" -o fresh.dll
+              python "$c/test_memory_http.py" "$(pwd)/fresh.dll" | tee receipts/fresh.log
+              if [ "$RUNNER_OS" = Windows ]; then lib=ecof.dll; else lib=libecof.so; fi
+              (cd "$pkg" && python test_memory_http.py "$(pwd)/$lib") | tee receipts/extracted.log
+              cmp receipts/fresh.log receipts/extracted.log
+              ;;
+            grimoire)
+              c=frozen/companion/grimoire
+              for f in native_ribbon.h test_native_ribbon.c test_native_ribbon.cjs; do cmp "$pkg/$f" "$c/$f"; done
+              gcc "${flags[@]}" frozen/instruments/grimoire/orbit.c "$c/session.c" "$c/test_native_ribbon.c" -o fresh.exe
+              ./fresh.exe > receipts/trace.csv
+              node "$c/test_native_ribbon.cjs" receipts/trace.csv | tee receipts/browser-parity.log
+              python -c "from pathlib import Path; a=Path('receipts/trace.csv').read_text().splitlines(); b=Path('extracted controller/native-ribbon-trace.csv').read_text().splitlines(); assert len(a)==960 and a==b"
+              ;;
+            *) exit 1;;
+          esac
+          printf '%s\n' "$PIN" > receipts/source.txt
+          printf '%s %s\n' "$ARTIFACT" "$DIGEST" > receipts/artifact.txt
+          gcc --version > receipts/compiler.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-native-controller-${{ matrix.instrument }}-${{ matrix.os }}
+          path: receipts/
+          if-no-files-found: error
