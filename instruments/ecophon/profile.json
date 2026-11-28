@@ -1,0 +1,164 @@
+{
+  "schema": "ecophon-local-semantics-v0",
+  "instrument": "ecophon",
+  "version": 1,
+  "provisional": true,
+  "wire_protocol": null,
+  "tiers": {
+    "standalone": "native core verified; PLATFORM standalone virtual author PASS at 94a2ffe; independent virtual QA pending",
+    "basic_midi": "intended; mapping/transport not verified",
+    "enhanced": "intended; local core snapshot only"
+  },
+  "parameters": [
+    {
+      "id": "fertility",
+      "min": 0,
+      "max": 255,
+      "default": 180
+    },
+    {
+      "id": "sharing",
+      "min": 0,
+      "max": 255,
+      "default": 200
+    },
+    {
+      "id": "pressure",
+      "min": 0,
+      "max": 255,
+      "default": 40
+    },
+    {
+      "id": "frozen",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    }
+  ],
+  "presets": [
+    "Mutualism",
+    "Scarcity",
+    "Seasonal Bloom",
+    "Frozen comparator"
+  ],
+  "events": [
+    "reset(seed,preset)",
+    "panic"
+  ],
+  "telemetry": {
+    "source": "local native core only",
+    "read_only": true,
+    "patches": {
+      "count": 4,
+      "resource": [
+        0,
+        4096
+      ]
+    },
+    "agents": {
+      "count": 8,
+      "fields": [
+        "alive",
+        "patch",
+        "species",
+        "trait",
+        "energy"
+      ]
+    },
+    "counters": [
+      "ticks",
+      "births",
+      "deaths",
+      "gifts",
+      "moves",
+      "consumed"
+    ],
+    "offline_replay": {
+      "schema": "ecophon-offline-replay-v1",
+      "source": "local native core only",
+      "frames_per_snapshot": 2400,
+      "agent_slots": 8,
+      "patches": 4,
+      "transport": false,
+      "producer": "companion_fixture.py"
+    }
+  },
+  "xy": {
+    "x": "fertility",
+    "y": "pressure"
+  },
+  "unsupported": [
+    "verified physical MIDI",
+    "device discovery",
+    "FM-1 telemetry"
+  ],
+  "performance_cues": {
+    "source": "local native audition controls, not device commands",
+    "frames_per_block": 2400,
+    "cue_blocks": 40,
+    "whole_arc_blocks": 240,
+    "targets": {
+      "mutualism": [
+        180,
+        200,
+        40
+      ],
+      "drought": [
+        0,
+        0,
+        255
+      ],
+      "recovery": [
+        255,
+        220,
+        0
+      ]
+    },
+    "arc_segments": [
+      {
+        "blocks": 40,
+        "target": "mutualism",
+        "mode": "ramp_from_current"
+      },
+      {
+        "blocks": 40,
+        "target": "drought",
+        "mode": "ramp"
+      },
+      {
+        "blocks": 40,
+        "target": "drought",
+        "mode": "hold"
+      },
+      {
+        "blocks": 40,
+        "target": "recovery",
+        "mode": "ramp"
+      },
+      {
+        "blocks": 80,
+        "target": "recovery",
+        "mode": "hold"
+      }
+    ],
+    "takeover": "manual controls, individual cue, freeze, feedback, reset or panic cancel the whole Arc",
+    "transport": false,
+    "environment_memories": {
+      "scope": "local page session; retained across habitat reset, not page reload",
+      "slots": 2,
+      "fields": [
+        "fertility",
+        "sharing",
+        "pressure"
+      ],
+      "range": [
+        0,
+        255
+      ],
+      "recall_blocks": 40,
+      "capture": "current slider intent, not agent/resource state; does not interrupt cue",
+      "recall": "snapshot target; no reset; manual/feedback/freeze/panic override",
+      "transport": false
+    }
+  }
+}

@@ -1,0 +1,7 @@
+#include "ecophon.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+static void le(FILE *f,uint32_t v,unsigned n){while(n--){fputc((int)(v&255u),f);v>>=8;}}
+static void header(FILE *f,uint32_t frames){fwrite("RIFF",1,4,f);le(f,36u+frames*2u,4);fwrite("WAVEfmt ",1,8,f);le(f,16,4);le(f,1,2);le(f,1,2);le(f,ECO_RATE,4);le(f,ECO_RATE*2u,4);le(f,2,2);le(f,16,2);fwrite("data",1,4,f);le(f,frames*2u,4);}
+int main(int argc,char **argv){if(argc!=5&&argc!=8){fprintf(stderr,"usage: ecophon OUTPUT.wav PRESET SEED SECONDS [FERTILITY SHARING PRESSURE]\n");return 2;}unsigned secs=(unsigned)strtoul(argv[4],NULL,10);if(secs==0||secs>600)return 2;Eco e;eco_reset(&e,(uint32_t)strtoul(argv[3],NULL,10),(unsigned)strtoul(argv[2],NULL,10));if(argc==8)eco_controls(&e,(unsigned)strtoul(argv[5],NULL,10),(unsigned)strtoul(argv[6],NULL,10),(unsigned)strtoul(argv[7],NULL,10),0);else if(strtoul(argv[2],NULL,10)>=3)eco_controls(&e,e.fertility,e.sharing,e.pressure,1);FILE *f=fopen(argv[1],"wb");if(!f)return 1;uint32_t frames=secs*ECO_RATE;header(f,frames);int16_t pcm[240];for(uint32_t n=0;n<frames;n+=240){eco_render(&e,pcm,240);for(unsigned j=0;j<240;++j)le(f,(uint16_t)pcm[j],2);}int failed=ferror(f);if(fclose(f))failed=1;printf("ticks=%u births=%u deaths=%u gifts=%u moves=%u consumed=%u state_bytes=%zu\n",(unsigned)e.ticks,(unsigned)e.births,(unsigned)e.deaths,(unsigned)e.gifts,(unsigned)e.moves,(unsigned)e.consumed,sizeof e);return failed?1:0;}

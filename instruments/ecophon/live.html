@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ecophon — habitat laboratory</title>
+<style>
+*{box-sizing:border-box}body{background:#101b20;color:#d8e8df;font:16px system-ui;margin:1rem auto;padding:1rem;max-width:800px}h1{font-size:1.8rem}button,select,input{accent-color:#75d1ae;font:inherit}button,select{background:#263b40;color:#fff;padding:.5rem;border:1px solid #486363;border-radius:.4rem}label{display:block;margin:.7rem 0}input[type=range]{width:60%;vertical-align:middle}canvas{width:100%;background:#15282c;border:1px solid #486363}#xy{height:112px;border:1px solid #486363;border-radius:.4rem;position:relative;touch-action:none;background:linear-gradient(0deg,#542e33,#224b43);cursor:crosshair}#marker{position:absolute;width:16px;height:16px;border:2px solid white;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none}small{color:#b5cbc1}#status{min-height:1.5em;color:#ffc58d}button:disabled{opacity:.5}
+</style>
+<h1>ECOPHON / habitat laboratory</h1>
+<p>Local native synthesis · ecological state, not FM-1 device telemetry.</p>
+<label>Regime for next reset <select id="preset"><option>Mutualism</option><option>Scarcity</option><option>Seasonal Bloom</option><option>Frozen comparator</option></select></label>
+<label>Seed <input id="seed" type="number" min="0" max="4294967295" value="42"></label>
+<button id="start">Start / reset habitat</button> <button id="stop">Panic / stop</button>
+<label>Fertility <input id="fertility" type="range" min="0" max="255" value="180"><output id="of">180</output></label>
+<label>Sharing <input id="sharing" type="range" min="0" max="255" value="200"><output id="os">200</output></label>
+<label>Survival pressure <input id="pressure" type="range" min="0" max="255" value="40"><output id="op">40</output></label>
+<label><input id="frozen" type="checkbox"> Freeze ecological interactions (comparison)</label>
+
+<p>Environmental XY: fertility left to right, pressure top to bottom</p><div id="xy" aria-label="Environmental gesture surface"><span id="marker"></span></div>
+<fieldset><legend>Habitat Arc — live environment cues</legend>
+<button id="cueBase" disabled>Mutualism</button> <button id="cueDrought" disabled>Drought</button> <button id="cueRecovery" disabled>Recovery</button>
+<button id="cueArc" disabled>Play whole Habitat Arc (24 s)</button>
+<p id="cueStatus" role="status">Manual environment.</p>
+<small>Each cue ramps from the current environment over 40 native block requests (four seconds of model audio when completed). The whole Arc blends into Mutualism, transitions to Drought, holds, recovers and sustains. No reset. Manual sliders, XY, freeze, feedback or panic cancel the active performance.</small></fieldset>
+<fieldset><legend>Environment memories — local session</legend>
+<p><button id="storeA" disabled>Capture A</button> <button id="recallA" disabled>Recall A</button> <output id="memoryA">Empty</output></p>
+<p><button id="storeB" disabled>Capture B</button> <button id="recallB" disabled>Recall B</button> <output id="memoryB">Empty</output></p>
+<small>Capture the last completed native control block (not an uncommitted slider position or ecological state). Recall blends in the native controller over 40 blocks without resetting agents, seed or clock. Slots survive habitat resets and page reloads while this local server process runs. Capture never interrupts an active cue; recall snapshots its target and replaces the active cue/feedback. Manual controls, freeze and panic override recall.</small></fieldset>
+<fieldset><legend>Population Tide — optional live feedback</legend>
+<label><input id="feedback" type="checkbox" disabled> Steer living population automatically</label>
+<label>Population goal <input id="goal" type="range" min="1" max="8" value="5"><output id="goalValue">5</output></label>
+<p id="feedbackStatus">Manual environment. Enable during playback. Manual sliders, XY, freeze and stop override feedback.</p>
+<small>One bounded update per native audio block (10 Hz), one-agent dead band; this is an experimental controller, not a guarantee of survival.</small></fieldset>
+<canvas id="habitat" width="640" height="360" aria-label="Four resource patches and eight possible agents"></canvas>
+<p><small>Bars: finite patch resource. Circles: living agents; size: energy, color: species, number: slot. Visualization follows completed audio blocks on the local playback clock.</small></p>
+<p id="stats"></p><p id="status" role="status">Ready. Start at low volume.</p>
+<script>
+"use strict";
+const $=id=>document.getElementById(id), names=["fertility","sharing","pressure"], outs=["of","os","op"];
+let ctx,gain,generation=0,epoch=0,next=0,timer=0,live=false,starting=false,raf=0;
+const visuals=[];const MAX_VISUALS=8;
+let lastLiving=null,cue=null;
+const CUE_BLOCKS=40, ARC_BLOCKS=240;
+const habitatCues={cueBase:[180,200,40],cueDrought:[0,0,255],cueRecovery:[255,220,0]};
+const memories={A:null,B:null};
+let pendingMemory=null,memoryBusy=false,nativeRecall=null,controlRevision=0,committedFrozen=false;
+function validMemory(values){
+ return Array.isArray(values)&&values.length===3&&values.every(v=>Number.isInteger(v)&&v>=0&&v<=255);
+}
+function displayMemory(slot,values){
+ if(values!==null&&!validMemory(values))throw Error("bad memory receipt");
+ memories[slot]=values;
+ $("memory"+slot).textContent=values===null?"Empty":"F "+values[0]+" / S "+values[1]+" / P "+values[2];
+}
+function captureMemory(slot){
+ if(!Object.hasOwn(memories,slot)||!live||pendingMemory||memoryBusy)return;
+ pendingMemory={kind:"capture",slot,revision:controlRevision};feedbackStatus();
+}
+function recallMemory(slot){
+ if(!Object.hasOwn(memories,slot)||!memories[slot]||!live||$("frozen").checked||pendingMemory||memoryBusy)return;
+ manualOverride();
+ pendingMemory={kind:"recall",slot,revision:controlRevision};feedbackStatus();
+ $("cueStatus").textContent="Recall "+slot+" · waiting for native block";
+}
+// Serialize all memory commands with the audio pump. No parallel command
+// request can race the outstanding render or the generation lease.
+async function serviceMemory(e){
+ const cmd=pendingMemory;
+ if(!cmd||(cmd.kind==="recall"&&committedFrozen))return;
+ pendingMemory=null;memoryBusy=true;feedbackStatus();
+ try{
+  const index=cmd.slot==="A"?0:1;
+  const d=await post("/memory/"+cmd.kind,{generation,slot:index});
+  if(!live||e!==epoch)return;
+  if(d.generation!==generation||d.slot!==index||d.accepted!==true||!validMemory(d.controls))throw Error("bad memory receipt");
+  displayMemory(cmd.slot,d.controls);
+  if(cmd.kind==="recall"&&cmd.revision===controlRevision&&!$("frozen").checked){
+   nativeRecall={slot:cmd.slot,block:0};
+   $("cueStatus").textContent="Recall "+cmd.slot+" · 0/"+CUE_BLOCKS;
+  }
+ }finally{
+  if(e===epoch){memoryBusy=false;feedbackStatus()}
+ }
+}
+for(const slot of ["A","B"]){
+ $("store"+slot).onclick=()=>captureMemory(slot);
+ $("recall"+slot).onclick=()=>recallMemory(slot);
+}
+function cueControls(from,to,block){
+ if(!Number.isInteger(block)||block<1||block>CUE_BLOCKS)throw Error("invalid cue block");
+ return from.map((v,i)=>Math.floor((v*(CUE_BLOCKS-block)+to[i]*block)/CUE_BLOCKS));
+}
+function arcControls(from,block){
+ if(!Number.isInteger(block)||block<1||block>ARC_BLOCKS)throw Error("invalid arc block");
+ const {cueBase:base,cueDrought:drought,cueRecovery:recovery}=habitatCues;
+ if(block<=40)return cueControls(from,base,block);
+ if(block<=80)return cueControls(base,drought,block-40);
+ if(block<=120)return [...drought];
+ if(block<=160)return cueControls(drought,recovery,block-120);
+ return [...recovery];
+}
+function arcSegment(block){
+ return block<=40?"Mutualism":block<=80?"Drought transition":block<=120?"Drought hold":block<=160?"Recovery transition":"Recovery hold";
+}
+function cancelCue(){
+ cue=null;nativeRecall=null;++controlRevision;
+ if(pendingMemory?.kind==="recall")pendingMemory=null;
+ $("cueStatus").textContent="Manual environment.";
+}
+function startArc(){
+ if(!live||$("frozen").checked)return;
+ manualOverride();
+ cue={id:"cueArc",from:names.map(n=>+$(n).value),block:0};
+ $("cueStatus").textContent="Habitat Arc · 0/"+ARC_BLOCKS;
+}
+$("cueArc").onclick=startArc;
+function startCue(id){
+ if(!live||$("frozen").checked||!Object.prototype.hasOwnProperty.call(habitatCues,id))return;
+ manualOverride();
+ cue={id,from:names.map(n=>+$(n).value),to:habitatCues[id],block:0};
+ $("cueStatus").textContent=$(id).textContent+" · 0/"+CUE_BLOCKS;
+}
+Object.keys(habitatCues).forEach(id=>$(id).onclick=()=>startCue(id));
+function populationControls(previous,living,goal){
+ if(!Array.isArray(previous)||previous.length!==4||previous[3]!==0||previous.some(v=>!Number.isInteger(v)||v<0||v>255)||!Number.isInteger(living)||living<0||living>8||!Number.isInteger(goal)||goal<1||goal>8)throw Error("invalid population control");
+ const error=living-goal,wanted=error>1?[75,100,160,0]:error< -1?[255,220,0,0]:[180,190,60,0];
+ return previous.map((v,i)=>Math.max(v-12,Math.min(v+12,wanted[i])));
+}
+function feedbackStatus(){
+ $("feedback").disabled=!live||$("frozen").checked;
+ [...Object.keys(habitatCues),"cueArc"].forEach(id=>$(id).disabled=!live||$("frozen").checked);
+ for(const slot of ["A","B"]){
+  $("store"+slot).disabled=!live||!!pendingMemory||memoryBusy;
+  $("recall"+slot).disabled=!live||$("frozen").checked||!memories[slot]||!!pendingMemory||memoryBusy;
+ }
+ $("feedbackStatus").textContent=($("feedback").checked?"Population feedback active":"Manual environment")+(lastLiving===null?"":" · last completed native block: "+lastLiving+"/8 living");
+}
+function manualOverride(){ cancelCue();$("feedback").checked=false;feedbackStatus(); }
+$("feedback").onchange=()=>{if(!live||$("frozen").checked)$("feedback").checked=false;if($("feedback").checked)cancelCue();feedbackStatus()};
+$("goal").oninput=()=>{$("goalValue").textContent=$("goal").value};
+$("frozen").onchange=manualOverride;
+function stepControls(){
+ const manual=[...names.map(n=>+$(n).value),+ $("frozen").checked];
+ if(cue&&!manual[3]){
+  const active=cue;
+  const isArc=active.id==="cueArc", total=isArc?ARC_BLOCKS:CUE_BLOCKS;
+  ++active.block;
+  const result=[...(isArc?arcControls(active.from,active.block):cueControls(active.from,active.to,active.block)),0];
+  sliders(result);
+  const label=isArc?"Habitat Arc · "+arcSegment(active.block):$(active.id).textContent;
+  $("cueStatus").textContent=label+" · "+active.block+"/"+total+(active.block===total?" complete":"");
+  if(active.block===total)cue=null;
+  return result;
+ }
+ if(!$("feedback").checked||manual[3]||lastLiving===null)return manual;
+ const result=populationControls(manual,lastLiving,+$("goal").value);
+ sliders(result);return result;
+}
+const presets=[[180,200,40,0],[100,20,150,0],[230,90,85,0],[180,200,40,1]];
+function marker(){ $("marker").style.left=(100*+$("fertility").value/255)+"%"; $("marker").style.top=(100*+$("pressure").value/255)+"%" }
+function sliders(v){names.forEach((n,i)=>{$(n).value=v[i];$(outs[i]).textContent=v[i]});$("frozen").checked=!!v[3];marker()}
+names.forEach((n,i)=>$(n).oninput=()=>{manualOverride();$(outs[i]).textContent=$(n).value;marker()});
+$("preset").onchange=()=>{if(!live)sliders(presets[$("preset").selectedIndex]);else $("status").textContent="Regime selected for next reset; current habitat still playing."};
+function gesture(e){manualOverride();const b=$("xy").getBoundingClientRect();const q=v=>Math.round(255*Math.max(0,Math.min(1,v)));$("fertility").value=q((e.clientX-b.left)/b.width);$("pressure").value=q((e.clientY-b.top)/b.height);$("of").textContent=$("fertility").value;$("op").textContent=$("pressure").value;marker()}
+$("xy").onpointerdown=e=>{if(!e.isPrimary)return;$("xy").setPointerCapture(e.pointerId);gesture(e)};
+$("xy").onpointermove=e=>{if($("xy").hasPointerCapture(e.pointerId))gesture(e)};
+marker();
+async function post(path,data){
+ const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-Ecophon-Fixture":"1"},body:JSON.stringify(data)});
+ if(!r.ok)throw Error("request "+r.status);return r.json();
+}
+function draw(d){
+ const c=$("habitat"),g=c.getContext("2d");g.clearRect(0,0,640,360);g.font="14px system-ui";
+ for(let p=0;p<4;p++){
+  const x=(p%2)*320+10,y=Math.floor(p/2)*180+10;
+  g.fillStyle="#263b40";g.fillRect(x,y,300,160);g.fillStyle="#75d1ae";g.fillRect(x+8,y+24,284*d.resources[p]/4096,8);
+  g.fillStyle="#d8e8df";g.fillText("Patch "+(p+1)+" / "+d.resources[p],x+8,y+17);
+  let n=0;d.agents.forEach((a,i)=>{if(!a.alive||a.patch!==p)return;
+    let cx=x+35+(n%4)*74,cy=y+65+Math.floor(n/4)*55;n++;
+    g.fillStyle=a.species?"#d8a66a":"#75d1ae";g.beginPath();g.arc(cx,cy,6+16*a.energy/4096,0,2*Math.PI);g.fill();
+    g.fillStyle="#d8e8df";g.fillText(String(i+1),cx-4,cy+32);
+  });
+ }
+ $("stats").dataset.ticks=String(d.ticks);$("stats").dataset.pressure=String(d.controls[2]);$("stats").dataset.fertility=String(d.controls[0]);$("stats").dataset.regime=String(d.regime);$("stats").textContent="Ticks "+d.ticks+" · regime "+["Mutualism","Scarcity","Seasonal Bloom"][d.regime]+(d.frozen?" (frozen comparator)":"")+" · births "+d.births+" · deaths "+d.deaths+" · gifts "+d.gifts+" · migrations "+d.moves;
+}
+function animate(e){
+ if(!live||e!==epoch)return;
+ let latest=null;
+ while(visuals.length&&visuals[0].at<=ctx.currentTime)latest=visuals.shift();
+ if(latest)draw(latest.state);
+ raf=requestAnimationFrame(()=>animate(e));
+}
+async function pump(e){
+ if(!live||e!==epoch)return;
+ if(next-ctx.currentTime>0.16||visuals.length>=MAX_VISUALS){timer=setTimeout(()=>pump(e),25);return}
+ try{
+  await serviceMemory(e);
+  if(!live||e!==epoch)return;
+  const recall=nativeRecall;
+  let d;
+  if(recall){
+   d=await post("/memory/step",{generation});
+  }else{
+   const [fertility,sharing,pressure,frozen]=stepControls();
+   d=await post("/step",{generation,fertility,sharing,pressure,frozen});
+  }
+  if(!live||e!==epoch)return;
+  const raw=atob(d.pcm);if(raw.length!==4800||d.rate!==24000||d.generation!==generation)throw Error("bad audio block");
+  const b=ctx.createBuffer(1,2400,24000),a=b.getChannelData(0);
+  for(let i=0;i<a.length;i++){let v=raw.charCodeAt(i*2)|(raw.charCodeAt(i*2+1)<<8);a[i]=(v>=32768?v-65536:v)/32768}
+  const src=ctx.createBufferSource();src.buffer=b;src.connect(gain);
+  next=Math.max(next,ctx.currentTime+0.015);src.start(next);next+=b.duration;
+  committedFrozen=!!d.frozen;
+  if(recall&&nativeRecall===recall){
+   sliders([...d.controls,d.frozen]);
+   ++recall.block;
+   $("cueStatus").textContent="Recall "+recall.slot+" · "+recall.block+"/"+CUE_BLOCKS+(recall.block===CUE_BLOCKS?" complete":"");
+   if(recall.block===CUE_BLOCKS)nativeRecall=null;
+  }
+  lastLiving=d.agents.reduce((n,a)=>n+(a.alive?1:0),0);feedbackStatus();
+  delete d.pcm;visuals.push({at:next,state:d});timer=setTimeout(()=>pump(e),5);
+ }catch(err){if(e===epoch){stop();$("status").textContent="Stopped: "+err.message}}
+}
+function stop(){
+ ++epoch;live=false;lastLiving=null;pendingMemory=null;memoryBusy=false;committedFrozen=false;manualOverride();clearTimeout(timer);cancelAnimationFrame(raf);visuals.length=0;$("stats").textContent="";for(const key of ["ticks","pressure","fertility","regime"])delete $("stats").dataset[key];$("habitat").getContext("2d").clearRect(0,0,640,360);if(gain){gain.gain.value=0;gain.disconnect();gain=null}
+ const old=generation;generation=0;if(old)post("/panic",{generation:old}).catch(()=>{});
+ $("status").textContent="Stopped / locally muted.";
+}
+$("stop").onclick=stop;
+$("start").onclick=async()=>{
+ if(starting)return;stop();const e=epoch;starting=true;$("start").disabled=true;
+ try{
+  if(!ctx)ctx=new (window.AudioContext||window.webkitAudioContext)();
+  await ctx.resume();if(e!==epoch)return;
+  const seed=+$("seed").value,preset=$("preset").selectedIndex;
+  if(!Number.isInteger(seed)||seed<0||seed>4294967295)throw Error("invalid seed");
+  const d=await post("/reset",{seed,preset});
+  if(e!==epoch){post("/panic",{generation:d.generation}).catch(()=>{});return}
+  generation=d.generation;sliders(d.controls);committedFrozen=!!d.controls[3];
+  if(!Array.isArray(d.memory_slots)||d.memory_slots.length!==2)throw Error("bad memory slots");
+  ["A","B"].forEach((slot,i)=>displayMemory(slot,d.memory_slots[i]));
+  gain=ctx.createGain();gain.gain.value=0.55;gain.connect(ctx.destination);
+  live=true;feedbackStatus();next=ctx.currentTime+0.04;$("status").textContent="Playing native ecological model.";animate(e);pump(e);
+ }catch(err){if(e===epoch){stop();$("status").textContent=err.message}}finally{starting=false;$("start").disabled=false}
+};
+window.addEventListener("keydown",e=>{if(e.key==="Escape"){e.preventDefault();stop()}});
+window.addEventListener("pagehide",stop);
+</script></html>

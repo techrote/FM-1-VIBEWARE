@@ -1,0 +1,119 @@
+name: Ecophon portable
+on:
+  pull_request:
+    paths:
+      - 'instruments/ecophon/**'
+      - '.github/workflows/ecophon-portable.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: instruments/ecophon
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source revision
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test -n "$EXPECTED_SOURCE"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          git rev-parse HEAD
+      - name: Compile and test
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror ecophon.c test.c -o test
+          ./test
+          gcc -std=c11 -O2 -Wall -Wextra -Werror ecophon.c test_environment_memory.c -o test-memory
+          ./test-memory
+          gcc -std=c11 -O2 -Wall -Wextra -Werror ecophon.c fixture.c test_memory_consumer.c -o test-consumer
+          ./test-consumer
+          gcc -std=c11 -O2 -Wall -Wextra -Werror ecophon.c host.c -o ecophon
+      - name: Linux UBSan
+        if: runner.os == 'Linux'
+        run: |
+          for cc in gcc clang; do
+            "$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all ecophon.c test.c -o test-san
+            ./test-san
+            "$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all ecophon.c test_environment_memory.c -o test-memory-san
+            ./test-memory-san
+            "$cc" -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all ecophon.c fixture.c test_memory_consumer.c -o test-consumer-san
+            ./test-consumer-san
+          done
+      - name: Build and exercise local live fixture
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then lib=ecof.dll; flags=""; else lib=libecof.so; flags="-fPIC"; fi
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -shared $flags ecophon.c fixture.c -o "$lib"
+          python test_live.py "$lib"
+          python test_memory_http.py "$lib"
+      - name: Render and verify exact PCM
+        run: |
+          mkdir -p audition
+          for p in 0 1 2 3; do ./ecophon audition/$p.wav "$p" 42 30; done
+          python -c "import hashlib,pathlib; expected=['6971486e4a5736a93cc1dda9ed4dc5675edf79f828de1e14a1fad70f2fc9ac88','e6c974d5988449d7880838223cc11a835ffba764ba67854e46558e2f12618b74','155158bdf0d51a2bed10948d9f1bf226d9f6c57e9b8f272c5c6ddcfb99e8bc7b','73e1093fb5103213af9f3ddccf52bce37ad1fbbb9aa5b3a1375c5c2cbcf3a41f']; actual=[hashlib.sha256(pathlib.Path(f'audition/{p}.wav').read_bytes()).hexdigest() for p in range(4)]; print(actual); assert actual==expected"
+          if [ "$RUNNER_OS" = Windows ]; then lib=ecof.dll; else lib=libecof.so; fi
+          python performance.py "$lib" audition/performances
+          python -c "import hashlib,pathlib; p=pathlib.Path('audition/performances'); expected={'habitat-arc':'83a249ae82900bfb9dce0c070318c5b9d91931195e1423dc25f362fe3e3f3f7e','steady-control':'a2c1e39b9c131b3c3640406c141c85e5d200a5c9e245e36970545e1f12620fc1','frozen-control':'702bdae98bd3fac7223cd05edd69e378ebcb2b45aa15e859a9ed8ca94f996ec1'}; actual={k:hashlib.sha256((p/(k+'.wav')).read_bytes()).hexdigest() for k in expected}; print(actual); assert actual==expected"
+          python companion_fixture.py "$lib" audition/performances/companion-replay.json
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('audition/performances/companion-replay.json').read_bytes()).hexdigest()=='0e5ec4eded3a2145005bf50a8a9abb8bbbf979d693f09d0dfc50f48baefa5adc'"
+          python feedback.py "$lib" audition/feedback
+          python -c "import hashlib,pathlib; p=pathlib.Path('audition/feedback'); expected={'population-feedback.json':'7dc794635135e92867da924938728125879b28d659d2e0cac0dfba5de7fa0056','population-feedback.wav':'a129ef7e0defc7bfbe1ec05e677a0342c2e46aea7e621e4138e65e6e29ec5853','population-steady.json':'6a63209d0baf9ecf054ea65ceb1b91262ab2952a81286915f0f148bafad6cd14','population-steady.wav':'ebcf20142f7c9a046bc7a08b45f79bdf00f1210107ba333506cf19bda43e16c7','population-summary.json':'44014f4f225e5076bc6b86b42646b96d02bd6a654032b8d22ca68a7c8ca9c4d3'}; assert {f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in p.iterdir()}==expected"
+          python live_arc_fixture.py "$lib" audition/live-arc
+          python -c "import hashlib,pathlib; p=pathlib.Path('audition/live-arc/live-arc-replay.json'); assert hashlib.sha256(p.read_bytes()).hexdigest()=='3ea099d0a352e56398f9bd0583103f0971dfa6cbca145be4637a72204411c8f3'"
+          cp ecophon* audition/
+          cp README.md fixture.c environment_memory.h test_environment_memory.c test_memory_consumer.c live.py live.html test_live.py test_memory_http.py test_browser.py profile.json performance.py companion_fixture.py feedback.py live_arc_fixture.py audition/
+          if [ "$RUNNER_OS" = Windows ]; then cp ecof.dll audition/; else cp libecof.so audition/; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ecophon-portable-${{ runner.os }}
+          path: instruments/ecophon/audition/
+
+      - name: Render comparative environment memories
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then lib=ecof.dll; else lib=libecof.so; fi
+          python memory_fixture.py "$lib" memory-evidence
+          python -c "import hashlib,pathlib; assert hashlib.sha256(pathlib.Path('memory-evidence/environment-memory-replay.json').read_bytes()).hexdigest()=='8102e696b1f32805492faf1b31bfc63d20093f5489dd807aab109958933a4df1'"
+          cp memory_fixture.py ecophon.c ecophon.h fixture.c environment_memory.h test_environment_memory.c test_memory_consumer.c memory-evidence/
+          git rev-parse HEAD > memory-evidence/source-revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ecophon-memory-replay-${{ runner.os }}
+          path: instruments/ecophon/memory-evidence/
+
+  browser:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: instruments/ecophon
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source revision
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test -n "$EXPECTED_SOURCE"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          git rev-parse HEAD
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile native fixture
+        run: gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC ecophon.c fixture.c -o libecof.so
+      - name: Install pinned browser test dependency
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Actual Chromium audio and controls
+        run: python test_browser.py libecof.so
