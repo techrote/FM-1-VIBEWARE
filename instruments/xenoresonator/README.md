@@ -38,3 +38,24 @@ The existing user material slot is endpoint A. Capture or import an independent 
 
 ## A/B morph performance score (offline native witness)
 Run `python material_morph_replay.py ./live.dll "material morph replay"` with Python 3 and Node available; Linux .so also supported. Three two-second phrases use separately reset seeds, matched notes and forward/reverse morphs; each arm adds one second of silence. Four arms: fixed A, macro interpolation with material A fixed, full control-space morph, and abrupt endpoint switch. The third pair uses the same material for both endpoints (negative control). The exact page applyMorph function is executed with minimal DOM stubs for all 384 pair/position combinations; actual native PCM is driven by the matched integer controls. Each of 560 block receipts carries position, controls, authored held state, six native sampled modal levels, peak/RMS and PCM hash. Six non-silent held midpoint comparisons, pre-midpoint identity, same-material control, 18 strikes and 15 releases per arm, three nonvacuous panics per arm and exact tail silence. Local GCC UBSan and Clang UBSan trap builds reproduced all four WAVs and receipt byte-for-byte; receipt SHA256 2418c5fc5b6c940d87d2f8964ad63463c452c3fded5094eb17fde72b78ff53b7. Predecessor author 46106395544 (Chromium included) and QA 46109623584 independently passed; new hosted replay pending. Local source/score only, no device telemetry, transport, core or target ABI changes.
+
+### Optional native A/B material memory
+
+`material_memory.h` exposes a caller-owned C11 local semantic controller: initialize,
+store/capture slots A and B, recall, or morph using positions 0–127. Both slots
+must be valid for morph. Macro rounding matches the browser, while material
+selection changes discretely at 64. Capture and import do not alter sounding
+state. Recall/morph preserve gate, note, RNG, burst and resonator history;
+the caller controls actual note/panic/reset and committed-block scheduling.
+Slots persist across an engine reset until the caller initializes the controller.
+Only the validated public operations are intended for callers; internal mix/apply
+helpers require valid arguments. No allocation, session or transport ABI is
+introduced. Use in a C11 translation unit with a single owner at audio-block
+boundaries; shared endpoint/companion integration remains separately owned.
+
+Local verification: compile `gcc -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all xeno.c test_material_memory.c -o memory-test`
+then execute `./memory-test`. Tests compare every 7-bit endpoint/position
+combination with an independent signed-delta formula, exercise all sixteen
+ordered material pairs and compare actual core PCM and state with direct controls.
+Invalid requests are rejected without mutation. This is a host semantic fixture,
+not target execution, negotiated MIDI support or device telemetry.
