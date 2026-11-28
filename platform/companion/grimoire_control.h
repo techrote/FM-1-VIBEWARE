@@ -35,6 +35,28 @@ static inline int cyd_orbit_apply(CydOrbitCommand *c,uint8_t op,const uint8_t *p
     } else return 0;
     c->version++;return 1;
 }
+/* Ownership is a local performance policy, not a CY1 field. Explicit panic
+ * and preset selection remain global safety/reset commands. Automatic
+ * session loss only clears remote-owned gestures (including their tails).
+ * A delayed remote release cannot cancel a panel-owned gate. */
+enum { CYD_ORBIT_OWNER_NONE, CYD_ORBIT_OWNER_PANEL, CYD_ORBIT_OWNER_REMOTE };
+enum { CYD_ORBIT_PANEL, CYD_ORBIT_REMOTE, CYD_ORBIT_SESSION_LOSS };
+static inline int cyd_orbit_apply_owned(CydOrbitCommand *c,uint8_t *owner,
+        uint8_t origin,uint8_t op,const uint8_t *p) {
+    if(origin==CYD_ORBIT_SESSION_LOSS) {
+        if(op!=CYD_PANIC)return 0;
+        if(*owner!=CYD_ORBIT_OWNER_REMOTE)return 1;
+    } else if(origin!=CYD_ORBIT_PANEL && origin!=CYD_ORBIT_REMOTE)return 0;
+    if(op==CYD_NOTE && origin==CYD_ORBIT_REMOTE && *owner==CYD_ORBIT_OWNER_PANEL && !p[1]) {
+        /* Validate even when the release is safely ignored. */
+        return p[0]>=36 && p[0]<=59;
+    }
+    if(!cyd_orbit_apply(c,op,p))return 0;
+    if(op==CYD_NOTE && p[1])
+        *owner=origin==CYD_ORBIT_PANEL?CYD_ORBIT_OWNER_PANEL:CYD_ORBIT_OWNER_REMOTE;
+    if(op==CYD_PANIC||op==CYD_SET_PRESET)*owner=CYD_ORBIT_OWNER_NONE;
+    return 1;
+}
 static inline void cyd_orbit_clear_peaks(CydOrbitRuntime *r) {r->peak=0;r->env=0;r->energy=0;}
 /* Nonzero means the outer rate converter must also clear its buffered sample. */
 static inline int cyd_orbit_sync(CydOrbitRuntime *r,const CydOrbitCommand *c) {

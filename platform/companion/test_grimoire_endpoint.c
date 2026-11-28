@@ -27,7 +27,36 @@ static size_t send(CydEndpoint *e,uint32_t session,uint16_t seq,uint32_t now,uin
 static void mutation(CydEndpoint *e,uint16_t *seq,uint8_t op,uint8_t a,uint8_t b,uint8_t n,uint8_t *out) {
     const uint8_t p[2]={a,b};++*seq;assert(!send(e,42,*seq,*seq,op,p,n,out));
 }
+static void ownership_test(void) {
+    Fixture f={0};uint8_t owner=CYD_ORBIT_OWNER_NONE;
+    int16_t pcm[2048],direct[2048];const uint8_t note[2]={48,127},release[2]={48,0},empty[2]={0,0};
+    cyd_orbit_init(&f.cmd);
+    assert(cyd_orbit_apply_owned(&f.cmd,&owner,CYD_ORBIT_PANEL,CYD_NOTE,note));
+    assert(owner==CYD_ORBIT_OWNER_PANEL);
+    render(&f,pcm,2048);
+    Orbit ref=f.rt.core;uint32_t version=f.cmd.version;
+    assert(cyd_orbit_apply_owned(&f.cmd,&owner,CYD_ORBIT_REMOTE,CYD_NOTE,release));
+    assert(cyd_orbit_apply_owned(&f.cmd,&owner,CYD_ORBIT_SESSION_LOSS,CYD_PANIC,empty));
+    assert(f.cmd.version==version&&f.cmd.gate&&owner==CYD_ORBIT_OWNER_PANEL);
+    render(&f,pcm,2048);orbit_render(&ref,direct,2048);assert(!memcmp(pcm,direct,sizeof pcm));
+    unsigned nonzero=0;for(unsigned i=0;i<2048;i++)nonzero+=pcm[i]!=0;assert(nonzero>1000);
+    /* An explicit remote emergency panic is still global. */
+    assert(cyd_orbit_apply_owned(&f.cmd,&owner,CYD_ORBIT_REMOTE,CYD_PANIC,empty));
+    render(&f,pcm,2048);for(unsigned i=0;i<2048;i++)assert(!pcm[i]);
+    assert(owner==CYD_ORBIT_OWNER_NONE);
+    /* A new remote note owns the gesture and expiry must still kill its tail,
+     * even after a note-off. */
+    assert(cyd_orbit_apply_owned(&f.cmd,&owner,CYD_ORBIT_REMOTE,CYD_NOTE,note));
+    render(&f,pcm,2048);
+    assert(cyd_orbit_apply_owned(&f.cmd,&owner,CYD_ORBIT_REMOTE,CYD_NOTE,release));
+    assert(owner==CYD_ORBIT_OWNER_REMOTE);
+    assert(cyd_orbit_apply_owned(&f.cmd,&owner,CYD_ORBIT_SESSION_LOSS,CYD_PANIC,empty));
+    render(&f,pcm,2048);for(unsigned i=0;i<2048;i++)assert(!pcm[i]);
+    assert(owner==CYD_ORBIT_OWNER_NONE);
+    printf("PASS: panel ownership, 2048 exact held PCM comparisons (%u sounding), 4096 exact silent panic/expiry samples\n",nonzero);
+}
 int main(void) {
+    ownership_test();
     Fixture f={0};CydEndpoint e;uint8_t out[63];uint16_t seq=0;int16_t pcm[2048],direct[2048];unsigned total=0;
     cyd_orbit_init(&f.cmd);
     assert(!cyd_endpoint_init_profile(&e,99,1,&f,apply,read_state));
