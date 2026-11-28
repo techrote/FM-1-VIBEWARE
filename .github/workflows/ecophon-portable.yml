@@ -19,6 +19,16 @@ jobs:
         working-directory: instruments/ecophon
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source revision
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test -n "$EXPECTED_SOURCE"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          git rev-parse HEAD
       - name: Compile and test
         run: |
           gcc -std=c11 -O2 -Wall -Wextra -Werror ecophon.c test.c -o test
@@ -63,6 +73,16 @@ jobs:
         working-directory: instruments/ecophon
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source revision
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test -n "$EXPECTED_SOURCE"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          git rev-parse HEAD
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
