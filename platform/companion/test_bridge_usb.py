@@ -262,7 +262,25 @@ def main():
         endpoint.advance(40)
         witnesses["socket_drop"] = endpoint.advance(80)
         assert witnesses["socket_drop"]["nonzero"] == 0, witnesses
-        # Panic does not itself retire the firmware session: expire its lease.
+        # Panic does not itself retire the firmware session. Keep its lease
+        # alive and open a new authenticated TCP socket with NO discovery.
+        # A forward old-session Note would be accepted by the old endpoint
+        # but would not be tracked for release by this new TCP owner.
+        prior_panic = endpoint.sent[-1]
+        assert prior_panic[6] == 8
+        old_forward = list(prior_panic[:13]) + [2, 48, 110, 247]
+        old_forward[6] = 7
+        seq = (((prior_panic[11] | prior_panic[12] << 7) + 1) & 16383) or 1
+        old_forward[11], old_forward[12] = seq & 127, seq >> 7
+        route.connect()
+        before = len(endpoint.sent)
+        route.reject_command({"type": "midi", "data": old_forward})
+        assert len(endpoint.sent) == before
+        witnesses["pre_discovery_stale_forward"] = endpoint.advance(80)
+        assert witnesses["pre_discovery_stale_forward"]["nonzero"] == 0
+        route.drop()
+        assert len(endpoint.sent) == before
+        # Now expire the old firmware lease and negotiate a fresh epoch.
         endpoint.advance(1600)
         native.command("disconnect")
         native.outgoing.clear()  # retired transport bytes must never enter new TCP
@@ -271,9 +289,14 @@ def main():
         assert state["companionReady"] and state["sourceLabel"] == "Emulated firmware", state
         latest_discover = next(m for m in reversed(endpoint.sent) if m[6] == 1)
         assert latest_discover[7:11] != note[7:11], "fresh session required"
-        route.transmit({"type": "midi", "data": list(note)})
-        stale = route.read()
-        assert stale["type"] == "midi" and stale["data"][6] == 9 and stale["data"][14] == 3, stale
+        route.reject_command({"type": "midi", "data": list(note)})
+        # A different Discover must not displace the current bridge epoch,
+        # even if its requested instrument is the other supported profile.
+        competing = list(latest_discover)
+        competing[7:11] = list(note[7:11])
+        competing[14] = 2 if GRIMOIRE else 3
+        route.reject_command({"type": "midi", "data": competing})
+        route.reject_command({"type": "midi", "data": old_forward})
         witnesses["stale_session"] = endpoint.advance(80)
         assert witnesses["stale_session"]["nonzero"] == 0, witnesses
         # Version and instrument-profile refusals must not alter the active
@@ -343,7 +366,7 @@ def main():
         assert state["companionReady"] and state["telemetryAvailable"], state
         discover = next(m for m in reversed(endpoint.sent) if m[6] == 1)
         assert discover[7:11] != malformed_note[7:11], "fresh session after malformed frame"
-        route.target_error(list(malformed_note), 3)
+        route.reject_command({"type": "midi", "data": list(malformed_note)})
         witnesses["malformed_stale_replay"] = endpoint.advance(80)
         assert witnesses["malformed_stale_replay"]["nonzero"] == 0
         route.action("note 57 110")
@@ -462,7 +485,7 @@ def main():
         assert state["companionReady"] and state["telemetryAvailable"], state
         fresh = next(m for m in reversed(endpoint.sent) if m[6] == 1)
         assert fresh[7:11] != retired_note[7:11]
-        route.target_error(list(retired_note), 3)
+        route.reject_command({"type": "midi", "data": list(retired_note)})
         witnesses["pressure_stale_note"] = endpoint.advance(80)
         assert witnesses["pressure_stale_note"]["nonzero"] == 0
         route.action("note 62 110")
