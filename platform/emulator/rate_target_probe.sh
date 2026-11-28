@@ -26,8 +26,19 @@
       mkdir "$TMP/probe-$mode-$case"
       (cd "$TMP/probe-$mode-$case"; FM1_LCD_TIMED=1 timeout 300 "$EXE" --bin "$TMP/probe-$mode.xip.bin" --entry 0x02000120 --ms 4500 --keys "600-700:N$note,900-1000:PLAY,3600-3700:HOME" --flash-chip p25q80 --wav "$PROBE/$mode-$case.wav" --dump "0x$addr" 5 --quiet) > "$PROBE/$mode-$case.log" 2>&1
     done
+    # Same compiled variants, matched timeline with one intervention.
+    for case in lifecycle-control lifecycle-switch lifecycle-repeat; do
+      keys="600-700:N3,900-1000:PLAY,2700-2800:HOME,3900-4000:PLAY,5200-5300:HOME"
+      if [[ "$case" != lifecycle-control ]]; then
+        keys="600-700:N3,900-1000:PLAY,1700-1900:SCL,2700-2800:HOME,3900-4000:PLAY,5200-5300:HOME"
+      fi
+      mkdir "$TMP/probe-$mode-$case"
+      (cd "$TMP/probe-$mode-$case"; FM1_LCD_TIMED=1 timeout 300 "$EXE" --bin "$TMP/probe-$mode.xip.bin" --entry 0x02000120 --ms 6200 --keys "$keys" --flash-chip p25q80 --wav "$PROBE/$mode-$case.wav" --dump "0x$addr" 5 --quiet) > "$PROBE/$mode-$case.log" 2>&1
+    done
   done
   python3 "$HERE/rate_probe.py" compare "$PROBE" | tee "$PROBE/summary.json"
   python3 "$HERE/rate_quality.py" --test | tee "$PROBE/quality-test.txt"
   python3 "$HERE/rate_quality.py" "$RES" | tee "$PROBE/quality.json"
+  python3 "$HERE/rate_lifecycle.py" --test | tee "$PROBE/lifecycle-test.txt"
+  python3 "$HERE/rate_lifecycle.py" "$PROBE" | tee "$PROBE/lifecycle.json"
 )
