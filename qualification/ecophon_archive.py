@@ -33,6 +33,8 @@ ECO_SUCCESSOR_FILES = (
     "feedback/population-steady.json", "feedback/population-summary.json",
 )
 
+ECO_ARC_FILES = tuple(f'live-arc/{p}-{a}.wav' for p in range(3) for a in ('arc','steady','takeover')) + ('live-arc/live-arc-replay.json',)
+
 def extract(archive, dest, expected, ignored=(), allowed_nested=()):
     assert sha(archive.read_bytes()) == expected, "original archive digest mismatch"
     with zipfile.ZipFile(archive) as z:
@@ -112,7 +114,9 @@ def main():
     p.add_argument("archive",type=Path)
     p.add_argument("digest")
     p.add_argument("--successor", action="store_true")
+    p.add_argument("--live-arc", action="store_true")
     args=p.parse_args()
+    assert not args.live_arc or args.successor
     source=args.source.resolve()/ "instruments/ecophon"
     windows=sys.platform=="win32"
     lib="ecof.dll" if windows else "libecof.so"
@@ -121,8 +125,8 @@ def main():
         root=Path(td)
         extracted=root/"original package"
         extracted.mkdir()
-        extract(args.archive,extracted,args.digest, allowed_nested=ECO_SUCCESSOR_FILES if args.successor else ())
-        for name in SOURCE:
+        extract(args.archive,extracted,args.digest, allowed_nested=(ECO_SUCCESSOR_FILES + (ECO_ARC_FILES if args.live_arc else ())) if args.successor else ())
+        for name in SOURCE + (("live_arc_fixture.py",) if args.live_arc else ()):
             assert (extracted/name).read_bytes()==(source/name).read_bytes(),name
         for i,h in enumerate(WAVS):
             assert sha((extracted/f"{i}.wav").read_bytes())==h
