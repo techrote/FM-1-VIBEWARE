@@ -1,12 +1,12 @@
 # Shared stage selection for the exact pinned platform qualification runner.
 vw_ci_mode() {
   if (( $# > 1 )); then
-    echo 'usage: ci.sh [all|baseline|rate]' >&2
+    echo 'usage: ci.sh [all|baseline|rate|rate-eco]' >&2
     return 2
   fi
   case "${1-all}" in
-    all|baseline|rate) printf '%s\n' "${1-all}" ;;
-    *) echo 'usage: ci.sh [all|baseline|rate]' >&2; return 2 ;;
+    all|baseline|rate|rate-eco) printf '%s\n' "${1-all}" ;;
+    *) echo 'usage: ci.sh [all|baseline|rate|rate-eco]' >&2; return 2 ;;
   esac
 }
 
