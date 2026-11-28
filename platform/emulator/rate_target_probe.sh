@@ -28,4 +28,6 @@
     done
   done
   python3 "$HERE/rate_probe.py" compare "$PROBE" | tee "$PROBE/summary.json"
+  python3 "$HERE/rate_quality.py" --test | tee "$PROBE/quality-test.txt"
+  python3 "$HERE/rate_quality.py" "$RES" | tee "$PROBE/quality.json"
 )
