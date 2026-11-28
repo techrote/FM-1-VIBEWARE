@@ -10,19 +10,21 @@
 enum { CM_OWNER_NONE, CM_OWNER_PANEL, CM_OWNER_COMPANION };
 enum { CM_ORIGIN_PANEL, CM_ORIGIN_COMPANION, CM_ORIGIN_SESSION_LOST };
 enum { CM_TRANSPORT_START, CM_TRANSPORT_STOP, CM_TRANSPORT_PANIC };
-enum { CM_PERF_REJECT = 0, CM_PERF_ACCEPT = 1, CM_PERF_FLUSH = 2 };
+enum { CM_PERF_REJECT = 0, CM_PERF_ACCEPT = 1, CM_PERF_FLUSH = 2, CM_PERF_IGNORED = 4 };
 
 static inline unsigned cm_perf_transport(cm_state *s, uint8_t *owner,
                                         unsigned origin, unsigned op) {
     if (origin == CM_ORIGIN_SESSION_LOST) {
         if (op != CM_TRANSPORT_STOP) return CM_PERF_REJECT;
-        if (*owner != CM_OWNER_COMPANION) return CM_PERF_ACCEPT;
+        if (*owner != CM_OWNER_COMPANION) return CM_PERF_ACCEPT | CM_PERF_IGNORED;
     } else if (origin != CM_ORIGIN_PANEL && origin != CM_ORIGIN_COMPANION) {
         return CM_PERF_REJECT;
     }
     if (op == CM_TRANSPORT_START) {
         /* Duplicate remote start cannot steal an already-running panel score.
          * An explicit panel start can always take local ownership. */
+        if (origin == CM_ORIGIN_COMPANION && s->playing && *owner == CM_OWNER_PANEL)
+            return CM_PERF_ACCEPT | CM_PERF_IGNORED;
         if (origin == CM_ORIGIN_PANEL || !s->playing)
             *owner = origin == CM_ORIGIN_PANEL ? CM_OWNER_PANEL : CM_OWNER_COMPANION;
         cm_start(s);
@@ -31,7 +33,7 @@ static inline unsigned cm_perf_transport(cm_state *s, uint8_t *owner,
     if (op != CM_TRANSPORT_STOP && op != CM_TRANSPORT_PANIC)
         return CM_PERF_REJECT;
     if (op == CM_TRANSPORT_STOP && origin == CM_ORIGIN_COMPANION &&
-        *owner == CM_OWNER_PANEL) return CM_PERF_ACCEPT;
+        *owner == CM_OWNER_PANEL) return CM_PERF_ACCEPT | CM_PERF_IGNORED;
     cm_stop(s);
     *owner = CM_OWNER_NONE;
     return CM_PERF_ACCEPT | CM_PERF_FLUSH;
