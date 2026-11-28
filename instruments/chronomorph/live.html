@@ -3,7 +3,7 @@
 <h1>Chronomorph — live clocks</h1><p>Actual local native engine. Edit patterns and warp while playing. Clock markers are sampled local state, not device telemetry.</p>
 <label>Composition <select id="preset"><option>Glass Lattice</option><option>Broken Meridian</option><option>Slow Eclipse</option></select></label>
 <label>BPM <input id="bpm" type="number" min="40" max="220"></label><label>Warp <input id="warp" type="number" min="-60" max="60"></label><label>Variation <input id="variation" type="number" min="0" max="100" value="12"></label><label>Seed <input id="seed" type="number" min="1" max="2147483647" value="17"></label>
-<div id="lanes"></div><fieldset><legend>Performance scenes</legend><p>Capture tempo, warp, variation and all three patterns; recall without restarting clocks. Four in-memory slots; export/import scene JSON to keep or share them. Seed, preset and transport are not recalled.</p><div id="scenes"></div><label for="sceneExchange">Scene bank JSON</label><textarea id="sceneExchange" maxlength="2048" rows="4" style="display:block;width:95%;font:12px monospace" spellcheck="false"></textarea><button id="exportScenes" type="button">Export scenes</button> <button id="importScenes" type="button">Import scenes</button><output id="sceneStatus" aria-live="polite">No scene saved</output></fieldset><button id="start">Start / resume</button> <button id="pause">Pause</button> <button id="reset">Reset composition</button> <button id="panic">Panic / disconnect</button><output id="status" aria-live="polite">Stopped</output>
+<button id="start">Start / resume</button> <button id="pause">Pause</button> <button id="reset">Reset composition</button> <button id="panic" aria-keyshortcuts="Escape">Panic / disconnect</button><output id="status" aria-live="polite">Stopped</output><div id="lanes"></div><fieldset><legend>Performance scenes</legend><p>Capture tempo, warp, variation and all three patterns; recall without restarting clocks. Four in-memory slots; export/import scene JSON to keep or share them. Seed, preset and transport are not recalled. Press 1–4 outside text/number fields to recall; Escape disconnects even while editing. The factory set fills empty slots only.</p><button id="factoryScenes" type="button">Fill empty slots: Lattice Variations</button> <div id="scenes"></div><label for="sceneExchange">Scene bank JSON</label><textarea id="sceneExchange" maxlength="2048" rows="4" style="display:block;width:95%;font:12px monospace" spellcheck="false"></textarea><button id="exportScenes" type="button">Export scenes</button> <button id="importScenes" type="button">Import scenes</button><output id="sceneStatus" aria-live="polite">No scene saved</output></fieldset>
 <script>
 const $=id=>document.getElementById(id), presets=[[112,24,[7,5,11],[73,21,1321]],[142,-32,[5,9,7],[21,297,85]],[84,48,[9,7,13],[293,73,4693]]];
 let lens=[],masks=[],token=null,seq=0,gen=0,playEpoch=0,playing=0,ctx=null,next=0,sources=new Set(),visual=[],timer=null,inflight=null;
@@ -40,20 +40,49 @@ function makeSceneBank(){
     }
   }
 }
+// Original authored performance cues; same validated local scene schema.
+function fillFactoryScenes(bank){
+  const cues=[
+    {bpm:112,warp:24,variation:12,patterns:[[7,73],[5,21],[11,1321]]},
+    {bpm:124,warp:-36,variation:25,patterns:[[7,19],[5,11],[11,585]]},
+    {bpm:84,warp:48,variation:38,patterns:[[9,293],[7,73],[13,4693]]},
+    {bpm:72,warp:-12,variation:4,patterns:[[7,9],[5,4],[11,129]]}
+  ];
+  let filled=0;
+  for(let i=0;i<4;i++)if(bank.recall(i)===null){bank.save(i,cues[i]);filled++}
+  return filled;
+}
+function sceneShortcut(key,editing,repeat,modified,composing){
+  if(repeat||modified||composing)return null;
+  if(key==='Escape')return 'panic';
+  if(!editing&&/^[1-4]$/.test(key))return Number(key)-1;
+  return null;
+}
 const sceneBank=makeSceneBank(),sceneRecallButtons=[];
 function sceneControls(){return {bpm:clamp('bpm',40,220),warp:clamp('warp',-60,60),variation:clamp('variation',0,100),patterns:lens.map((n,i)=>[n,masks[i]])}}
 for(let i=0;i<4;i++){
   const save=document.createElement('button'),recall=document.createElement('button'),name='Scene '+(i+1);
-  save.type=recall.type='button';save.textContent='Save '+name;recall.textContent='Recall '+name;recall.disabled=true;
+  save.type=recall.type='button';save.textContent='Save '+name;recall.textContent='Recall '+name;recall.setAttribute('aria-keyshortcuts',String(i+1));recall.disabled=true;
   save.onclick=()=>{sceneBank.save(i,sceneControls());recall.disabled=false;$('sceneStatus').textContent=name+' saved'};
   recall.onclick=()=>{const s=sceneBank.recall(i);if(!s)return;$('bpm').value=s.bpm;$('warp').value=s.warp;$('variation').value=s.variation;lens=s.patterns.map(p=>p[0]);masks=s.patterns.map(p=>p[1]);grid();$('sceneStatus').textContent=name+' recalled (clock and transport unchanged)'};
   sceneRecallButtons.push(recall);$('scenes').append(save,recall,document.createTextNode(' '));
 }
+function refreshSceneButtons(){sceneRecallButtons.forEach((b,i)=>{b.disabled=sceneBank.recall(i)===null})}
+$('factoryScenes').onclick=()=>{
+  const n=fillFactoryScenes(sceneBank);refreshSceneButtons();
+  $('sceneStatus').textContent=n?'Lattice Variations: filled '+n+' empty slot(s) — recall to apply':'All slots occupied — no scenes changed';
+};
+window.addEventListener('keydown',e=>{
+  const editing=!!e.target?.closest?.('input,textarea,select,[contenteditable]');
+  const action=sceneShortcut(e.key,editing,e.repeat,e.ctrlKey||e.altKey||e.metaKey||e.shiftKey,e.isComposing);
+  if(action==='panic'){e.preventDefault();disconnect()}
+  else if(action!==null&&!sceneRecallButtons[action].disabled){e.preventDefault();sceneRecallButtons[action].click()}
+});
 $('exportScenes').onclick=()=>{$('sceneExchange').value=sceneBank.exportText();$('sceneStatus').textContent='Scene bank exported — copy the JSON to keep it'};
 $('importScenes').onclick=()=>{
   try{
     sceneBank.importText($('sceneExchange').value);
-    sceneRecallButtons.forEach((b,i)=>{b.disabled=sceneBank.recall(i)===null});
+    refreshSceneButtons();
     $('sceneStatus').textContent='Scene bank imported — recall a slot to apply it';
   }catch(e){$('sceneStatus').textContent='Import rejected — existing scenes unchanged'}
 };

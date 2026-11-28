@@ -112,6 +112,32 @@ with Server(("127.0.0.1",0),Handler) as s:
             assert c.request.post_data_json["token"]==d.request.post_data_json["token"]==a.request.post_data_json["token"]
             assert d.json()["seq"]>c.json()["seq"]
             assert all(y[1]>=x[1] for x,y in zip(c.json()["lanes"],d.json()["lanes"]))
+            # Factory cues fill only empty slots and do not apply controls.
+            page.get_by_role("button",name="Fill empty slots: Lattice Variations",exact=True).click()
+            assert "filled 2" in page.locator("#sceneStatus").inner_text()
+            page.get_by_role("button",name="Export scenes",exact=True).click()
+            filled=json.loads(page.locator("#sceneExchange").input_value())
+            assert filled["slots"][:2]==decoded["slots"][:2]
+            assert filled["slots"][2]==dict(bpm=84,warp=48,variation=38,patterns=[[9,293],[7,73],[13,4693]])
+            assert filled["slots"][3]==dict(bpm=72,warp=-12,variation=4,patterns=[[7,9],[5,4],[11,129]])
+            page.get_by_role("button",name="Fill empty slots: Lattice Variations",exact=True).click()
+            assert "no scenes changed" in page.locator("#sceneStatus").inner_text()
+            # Digits typed in the JSON field are not performance events.
+            page.locator("#sceneExchange").focus()
+            with page.expect_response(scene_response(112,24,12,41)):
+                page.keyboard.press("3")
+            # A shortcut outside editing recalls the full scene in the existing session.
+            page.locator("h1").click()
+            def cue_response(r):
+                return r.url.endswith("/block") and r.status==200 and all(
+                    r.request.post_data_json[k]==v for k,v in dict(playing=1,**filled["slots"][2]).items())
+            with page.expect_response(cue_response) as cue:
+                page.keyboard.press("3")
+            e=cue.value
+            assert e.request.post_data_json["token"]==d.request.post_data_json["token"]
+            assert e.json()["seq"]>d.json()["seq"]
+            assert all(y[1]>=x[1] for x,y in zip(d.json()["lanes"],e.json()["lanes"]))
+            assert page.locator("#sceneStatus").inner_text().startswith("Scene 3 recalled")
             page.get_by_role("button",name="Pause",exact=True).click()
             with page.expect_response(lambda r:r.url.endswith("/block") and r.status==200 and
                     r.request.post_data_json["playing"]==0 and r.request.post_data_json["bpm"]==112):
@@ -136,6 +162,14 @@ with Server(("127.0.0.1",0),Handler) as s:
             assert page.locator(".current").count()==0
             page.get_by_role("button",name="Start / resume",exact=True).click()
             page.wait_for_function("n=>window.witness.starts>n",arg=n)
+            # Escape is a safety shortcut even when editing the scene JSON.
+            page.locator("#sceneExchange").focus()
+            page.keyboard.press("Escape")
+            n=page.evaluate("window.witness.starts")
+            page.wait_for_timeout(250)
+            assert page.evaluate("window.witness.starts")==n
+            assert page.locator(".current").count()==0
+            assert page.locator("#status").inner_text()=="Stopped / disconnected"
             assert not errors,errors
             print("Chromium actual native PCM scheduling, visual clocks, live controls, pause/resume, panic and reconnect PASS",page.evaluate("window.witness"))
             browser.close()
