@@ -98,9 +98,15 @@ def serve(engine,port):
             if self.path!="/api" or self.headers.get("Origin") not in (None,f"http://127.0.0.1:{port}") or self.headers.get("Content-Type")!="application/json":
                 self.send_error(403);return
             try:
-                n=int(self.headers.get("Content-Length","0"))
+                lengths=self.headers.get_all("Content-Length", [])
+                if len(lengths)!=1 or self.headers.get_all("Transfer-Encoding", []):raise ValueError("framing")
+                raw=lengths[0]
+                if not raw.isascii() or not raw.isdecimal() or len(raw)>4:raise ValueError("length")
+                n=int(raw)
                 if not 1<=n<=1024:raise ValueError("length")
-                d=json.loads(self.rfile.read(n))
+                body=self.rfile.read(n)
+                if len(body)!=n:raise ValueError("truncated body")
+                d=json.loads(body)
                 if not isinstance(d,dict):raise ValueError("object")
                 out=engine.handle(d);code=200
             except (ValueError,TypeError,UnicodeError,socket.timeout):out={"error":"invalid request/session"};code=400
