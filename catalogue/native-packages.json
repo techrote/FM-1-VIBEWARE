@@ -5,34 +5,34 @@
     {
       "id": "chronomorph",
       "name": "Chronomorph",
-      "source": "7fa9a16b55b321a1a8b46e174ed15e927aeaece6",
-      "run": 46081835047,
-      "artifact": 15237532785,
-      "sha256": "8dc9349bf5bdd8f8b27e6579fc9227257e4fae72f29302b0cd8fbb11724bf3f3",
+      "source": "f40de42e0973f6697e6d1f19c05ed3565dcbe09e",
+      "run": 46087577525,
+      "artifact": 15239418502,
+      "sha256": "7d70778ead11f29d4403f74f8c4012c437b8a4b3191797d6849e021a90b9c9fc",
       "qa": "independent Windows/Linux native and score/replay PASS",
-      "qa_run": 46085052942,
+      "qa_run": 46090669288,
       "entry": "live.py",
       "library": "chronomorph-live.dll",
       "library_flag": false,
       "page": "Chronomorph",
-      "controls": "Patterns, tempo, warp, variation, transport, scene capture/recall/JSON",
-      "qa_artifact": 15238497670
+      "controls": "Pattern editor, tempo, warp, variation, four factory scenes and keyboard transport",
+      "qa_artifact": 15241072011
     },
     {
       "id": "ecophon",
       "name": "Ecophon",
-      "source": "228784f3df8f3c18701ab484b60cd1a607d511c9",
-      "run": 46083227399,
-      "artifact": 15238145831,
-      "sha256": "ef28aaa1a06f375b5eacb686268dceecfed36974f99b82773f684bd2687952f0",
+      "source": "6c9a6b2fab84a6bfe12d80feff365235901cec3a",
+      "run": 46088221502,
+      "artifact": 15240071594,
+      "sha256": "7b1da307dd8c5d575a752aef7ced1582e21f7fa39f890e2fc48fc36461e46a23",
       "qa": "independent Windows/Linux native and score/replay PASS",
-      "qa_run": 46085052942,
+      "qa_run": 46090669288,
       "entry": "live.py",
       "library": "ecof.dll",
       "library_flag": true,
       "page": "Ecophon",
-      "controls": "Fertility, sharing, pressure, habitat regimes, Population Tide feedback and XY",
-      "qa_artifact": 15238392942
+      "controls": "Fertility, sharing, pressure, Population Tide and individual Habitat Arc cues",
+      "qa_artifact": 15240928632
     },
     {
       "id": "xenoresonator",
@@ -53,18 +53,18 @@
     {
       "id": "grimoire",
       "name": "Grimoire Orbit Gate",
-      "source": "63ecfd1b3ee08988555397bd0673aec91a4cb4e7",
-      "run": 46084199074,
-      "artifact": 15237793431,
-      "sha256": "7c25f0f696645f7442adcc4bc74a2be8901c1463a4a6dcd32c02ef3e5982c3ea",
+      "source": "efcb924537eee3709d1954d02eff12c1c7e9df2f",
+      "run": 46089595306,
+      "artifact": 15240398166,
+      "sha256": "3d22376237df961a41b8b292cabd14aafd397de9d0e02341f6108656bc75e4d4",
       "qa": "independent Windows/Linux native and score/replay PASS",
-      "qa_run": 46085052942,
+      "qa_run": 46090669288,
       "entry": "host.py",
       "library": "orbit.dll",
       "library_flag": false,
       "page": "Orbit Gate",
-      "controls": "Sustained gate, XY, presets, Ribbon/Crown/Pendulum, panic",
-      "qa_artifact": 15238109475
+      "controls": "Rite, held gate, XY, three factory trajectories and custom Orbit Sketch",
+      "qa_artifact": 15241371388
     }
   ]
 }
