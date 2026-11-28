@@ -3,7 +3,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/ci_mode.sh"
 [[ $(vw_ci_mode) == all ]]
-for mode in all baseline rate; do [[ $(vw_ci_mode "$mode") == "$mode" ]]; done
+for mode in all baseline rate rate-eco; do [[ $(vw_ci_mode "$mode") == "$mode" ]]; done
 for invalid in '' typo; do
   if vw_ci_mode "$invalid"; then exit 1; fi
 done
