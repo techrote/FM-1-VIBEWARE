@@ -49,10 +49,11 @@ async function checkOrbitTimeline(){
     globalThis.nativeFixture={pcm:"",rate:24000,phase:[1,2,3],energy:1,env:100,gate:1,preset:0,x:42,y:60};
     request=(kind)=>kind==="event"?new Promise(resolve=>{globalThis.releaseEvent=resolve}):Promise.resolve(nativeFixture);
     pump();globalThis.firstPending=inFlight;globalThis.submittedPhase=ribbon.phase;
-    ribbon.setShape("crown");releaseEvent({})`);
+    ribbon.setShape("crown");ribbon.setDirection(-1);releaseEvent({})`);
   await run('firstPending');
   assert.equal(run('visuals.length'),1);
   assert.equal(run('visuals[0].state.localOrbit.shape'),'ribbon');
+  assert.equal(run('visuals[0].state.localOrbit.direction'),1);
   assert.equal(run('visuals[0].state.localOrbit.phase===submittedPhase'),true);
   assert.equal(run('visuals[0].state.localOrbit.path[0][1]'),18);
   assert.equal(run('visuals[0].state.localOrbit.path!==GestureQueue.Ribbon.path'),true);
@@ -63,9 +64,11 @@ async function checkOrbitTimeline(){
   await run('secondPending');
   assert.equal(run('visuals.length'),2);
   assert.equal(run('visuals[1].state.localOrbit.shape'),'crown');
+  assert.equal(run('visuals[1].state.localOrbit.direction'),-1);
   assert.equal(run('visuals[1].state.localOrbit.path[0][1]'),96);
   run('originalDraw(visuals[1].state)');
   assert.equal(run('orbitPlayed.textContent.startsWith("Played local orbit: crown")'),true);
+  assert.equal(run('orbitPlayed.textContent.includes("reverse")'),true);
   run('ribbon.setSketch(Array(8).fill([10,80]));ribbon.setShape("sketch");globalThis.captured=captureOrbit();ribbon.setSketch(Array(8).fill([100,20]))');
   assert.equal(run('captured.path[0][0]'),10);
   assert.equal(run('captured.path[0][1]'),80);
@@ -73,7 +76,8 @@ async function checkOrbitTimeline(){
   await run('thirdPending');
   assert.equal(run('visuals.length+sources.size'),0);
   assert.equal(run('captureOrbit()'),null);
+  assert.equal(run('ribbon.direction'),1);
   assert.equal(run('orbitPlayed.textContent'),'Played local orbit: off');
-  console.log('Actual asynchronous page pump: 16 assertions, detached played paths, delayed response, edit and panic invalidation PASS (DOM/audio stub)');
+  console.log('Actual asynchronous page pump: 20 assertions, detached played paths and directions, delayed response, edit and panic invalidation PASS (DOM/audio stub)');
 }
 checkOrbitTimeline().catch(err=>{console.error(err);process.exitCode=1});
