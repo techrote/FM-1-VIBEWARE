@@ -116,6 +116,9 @@ if cmp -s "$RES/orbit-n3.wav" "$RES/orbit-n9.wav"; then
 fi
 echo "actual reference control + Grimoire PCM repeat, alternate flash model, pitch contrast and HOME tail PASS" | tee "$RES/result.txt"
 # No executable or raw XIP uploads until combined distribution rights are resolved.
+# Isolated #16 experiment; existing uninstrumented target evidence remains unchanged.
+source "$HERE/rate_target_probe.sh"
+
 
 # Each downstream target runs in a strict subshell; a failure cannot suppress
 # the other target's evidence. The parent still fails if either fails.
