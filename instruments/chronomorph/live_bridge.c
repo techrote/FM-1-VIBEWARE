@@ -54,3 +54,38 @@ int live_score_block(int16_t *pcm,uint32_t *snapshot){
     if(!cm_score_advance(&score))cm_stop(&state);
     return 1;
 }
+
+/* Atomic authored score load. The live bank and engine are unchanged; only
+ * the detached cursor is replaced after all supplied controls validate.
+ * The host ABI uses nine signed 32-bit values per slot, not a wire struct. */
+int live_score_start(unsigned seconds,unsigned mask,const int32_t *values){
+    cm_scene_bank next={0};
+    if(!mask||(mask&~15u)||seconds<1||seconds>CM_SCORE_MAX_SECONDS)return 0;
+    for(unsigned slot=0;slot<CM_SCENE_SLOTS;slot++){
+        if(!(mask&(1u<<slot)))continue;
+        const int32_t *p=values+9*slot;
+        if(p[0]<40||p[0]>220||p[1]< -60||p[1]>60||p[2]<0||p[2]>100)return 0;
+        cm_scene v={0};
+        v.bpm=(uint16_t)p[0];v.warp=(int8_t)p[1];v.variation=(uint8_t)p[2];
+        for(unsigned i=0;i<CM_LANES;i++){
+            int32_t n=p[3+2*i],m=p[4+2*i];
+            if(n<1||n>16||m<0||(uint32_t)m>=(UINT32_C(1)<<n))return 0;
+            v.length[i]=(uint8_t)n;v.mask[i]=(uint16_t)m;
+        }
+        if(!cm_scene_put(&next,slot,&v))return 0;
+    }
+    return cm_score_begin(&score,&next,seconds);
+}
+unsigned live_score_total(void){
+    unsigned total=score.remaining;
+    if(total)for(unsigned i=score.slot+1;i<CM_SCENE_SLOTS;i++)
+        if(score.snapshot.occupied&(1u<<i))total+=score.span;
+    return total;
+}
+int live_score_frame(int32_t *values){
+    const cm_scene *v=cm_score_peek(&score);
+    if(!v)return 0;
+    values[0]=(int32_t)score.slot;values[1]=v->bpm;values[2]=v->warp;values[3]=v->variation;
+    for(unsigned i=0;i<CM_LANES;i++){values[4+2*i]=v->length[i];values[5+2*i]=v->mask[i];}
+    return 1;
+}

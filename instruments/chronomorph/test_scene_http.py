@@ -74,6 +74,38 @@ with Server(("127.0.0.1",0),Handler) as server:
             post("/score/begin",dict(token=b,seq=46,seconds=1))
             time.sleep(1.7)
             post("/score/block",dict(token=b,seq=47),409)
+        # Imported/factory cues arm atomically without rendering an extra
+        # block or mutating the separate native capture bank.
+        imported=0
+        for preset in range(3):
+            t=session(preset)
+            slots=[CUES[0],None,None,CUES[1]]
+            def arm(seq,seconds,values,code=200):
+                return post("/score/start",dict(token=t,seq=seq,seconds=seconds,slots=values),code)
+            assert arm(1,1,slots)["scene"]==dict(next_slot=0,remaining_blocks=20,occupied_mask=0,total_remaining=40)
+            arm(2,1,[CUES[0],None,None,CUES[1]|{"bpm":221}],400)
+            arm(2,1,[None]*4,400)
+            arm(2,0,slots,400)
+            arm(3,1,slots,409)
+            actual=[]
+            for n in range(40):
+                row=post("/score/block",dict(token=t,seq=2+n))
+                assert row["frame"]==dict(slot=0 if n<20 else 3,controls=CUES[n//20])
+                assert row["scene"]["total_remaining"]==39-n
+                assert row["scene"]["occupied_mask"]==0
+                actual.append(stripped(row))
+            post("/score/block",dict(token=t,seq=42),400)
+            assert quiet(direct(t,42,CUES[1],0))
+            assert arm(43,1,slots)["scene"]["total_remaining"]==40
+            post("/panic",dict(token=t))
+            post("/score/block",dict(token=t,seq=44),409)
+            b=session(preset)
+            post("/score/block",dict(token=b,seq=1),400)
+            for n,row in enumerate(actual):
+                assert row==stripped(direct(b,n+1,CUES[n//20])),(preset,n)
+                imported+=1
+        assert imported==120
+        print("Atomic imported score: 120 exact PCM/state blocks, native cue readback, rejection, detached bank and panic PASS")
         assert total==120 and sounding>0
         print(f"Native HTTP score: {total} exact PCM/state blocks, {sounding} sounding; detached bank, recall, cancellation, panic and expiry PASS")
     finally:

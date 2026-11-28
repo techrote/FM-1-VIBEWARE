@@ -41,6 +41,12 @@ class Engine:
         self.lib.live_score_position.restype=None
         self.lib.live_score_block.argtypes=[C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
         self.lib.live_score_block.restype=C.c_int
+        self.lib.live_score_start.argtypes=[C.c_uint,C.c_uint,C.POINTER(C.c_int32)]
+        self.lib.live_score_start.restype=C.c_int
+        self.lib.live_score_total.argtypes=[]
+        self.lib.live_score_total.restype=C.c_uint
+        self.lib.live_score_frame.argtypes=[C.POINTER(C.c_int32)]
+        self.lib.live_score_frame.restype=C.c_int
         self.token=None
         self.seq=0
         self.deadline=0
@@ -53,7 +59,7 @@ class Engine:
 
     def scene_request(self,path,q):
         extra={"/scene/capture":{"slot"},"/scene/clear":set(),
-               "/scene/recall":{"slot","playing"},"/score/begin":{"seconds"},"/score/block":set()}
+               "/scene/recall":{"slot","playing"},"/score/begin":{"seconds"},"/score/start":{"seconds","slots"},"/score/block":set()}
         if path not in extra or set(q)!={"token","seq"}|extra[path]:
             raise ValueError("invalid scene request")
         seq=integer(q["seq"],1,2147483647)
@@ -65,6 +71,31 @@ class Engine:
                 raise ValueError("capture rejected")
         elif path=="/scene/clear":
             self.lib.live_scene_clear()
+        elif path=="/score/start":
+            seconds=integer(q["seconds"],1,10)
+            slots=q["slots"]
+            if type(slots) is not list or len(slots)!=4:
+                raise ValueError("four scene slots required")
+            values=(C.c_int32*36)()
+            mask=0
+            for i,cue in enumerate(slots):
+                if cue is None: continue
+                if type(cue) is not dict or set(cue)!={"bpm","warp","variation","patterns"}:
+                    raise ValueError("invalid score cue")
+                row=[integer(cue["bpm"],40,220),integer(cue["warp"],-60,60),
+                     integer(cue["variation"],0,100)]
+                patterns=cue["patterns"]
+                if type(patterns) is not list or len(patterns)!=3:
+                    raise ValueError("three patterns required")
+                for p in patterns:
+                    if type(p) is not list or len(p)!=2:
+                        raise ValueError("pattern pair required")
+                    n=integer(p[0],1,16)
+                    row.extend((n,integer(p[1],0,(1<<n)-1)))
+                values[9*i:9*i+9]=row
+                mask|=1<<i
+            if not self.lib.live_score_start(seconds,mask,values):
+                raise ValueError("score rejected")
         elif path=="/score/begin":
             if not self.lib.live_score_begin(integer(q["seconds"],1,10)):
                 raise ValueError("score rejected")
@@ -76,7 +107,13 @@ class Engine:
                 accepted=self.lib.live_scene_recall(integer(q["slot"],0,3),playing,pcm,snap)
             else:
                 playing=1
+                frame=(C.c_int32*10)()
+                if not self.lib.live_score_frame(frame):
+                    raise ValueError("no score block")
                 accepted=self.lib.live_score_block(pcm,snap)
+                result["frame"]={"slot":int(frame[0]),"controls":{
+                    "bpm":int(frame[1]),"warp":int(frame[2]),"variation":int(frame[3]),
+                    "patterns":[list(frame[i:i+2]) for i in range(4,10,2)]}}
             if not accepted:
                 raise ValueError("no scene or score block")
             result.update(pcm=base64.b64encode(struct.pack("<1200h",*pcm)).decode("ascii"),
@@ -84,7 +121,7 @@ class Engine:
         pos=(C.c_uint32*2)()
         self.lib.live_score_position(pos)
         result["scene"]={"next_slot":int(pos[0]) if pos[1] else None,"remaining_blocks":int(pos[1]),
-                         "occupied_mask":int(self.lib.live_scene_mask())}
+                         "occupied_mask":int(self.lib.live_scene_mask()),"total_remaining":int(self.lib.live_score_total())}
         self.seq=seq
         self.deadline=time.monotonic()+LEASE
         return result

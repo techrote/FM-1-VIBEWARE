@@ -179,54 +179,53 @@ with Server(("127.0.0.1",0),Handler) as s:
             assert "cancelled" in page.locator("#scoreStatus").inner_text()
             page.wait_for_function("score===null")
             requests=[]
-            def observe_score(req):
-                if req.url.endswith("/block"):
-                    requests.append(req.post_data_json)
-            page.on("request",observe_score)
+            def observe_score(response):
+                if response.url.endswith("/score/block") and response.status==200:
+                    requests.append((response.request.post_data_json,response.json()))
+            page.on("response",observe_score)
             first,active_token=page.evaluate("""() => {
                 document.querySelector('#performScore').click();return [seq+1,token]
             }""")
             before=page.evaluate("window.witness.nonzero")
             page.wait_for_function("document.querySelector('#scoreStatus').textContent.startsWith('Score complete')",timeout=45000)
             page.wait_for_function("document.querySelector('#status').textContent.startsWith('Paused')")
-            frames=[q for q in requests if q["token"]==active_token and first<=q["seq"]<first+400]
+            frames=[(q,v) for q,v in requests if q["token"]==active_token and first<q["seq"]<=first+400]
             assert len(frames)==400
-            assert [q["seq"] for q in frames]==list(range(first,first+400))
+            assert [q["seq"] for q,v in frames]==list(range(first+1,first+401))
             expected=[
                 (112,24,12,[[7,73],[5,21],[11,1321]]),
                 (124,-36,25,[[7,19],[5,11],[11,585]]),
                 (84,48,38,[[9,293],[7,73],[13,4693]]),
                 (72,-12,4,[[7,9],[5,4],[11,129]])]
-            for i,q in enumerate(frames):
-                assert q["playing"]==1
-                assert (q["bpm"],q["warp"],q["variation"],q["patterns"])==expected[i//100]
+            for i,(q,v) in enumerate(frames):
+                assert set(q)=={"token","seq"} and v["playing"]==1
+                assert v["frame"]["slot"]==i//100
+                c=v["frame"]["controls"]
+                assert (c["bpm"],c["warp"],c["variation"],c["patterns"])==expected[i//100]
+                assert v["scene"]["total_remaining"]==399-i
             assert page.evaluate("token")==active_token
             assert page.evaluate("window.witness.nonzero")>before
             page.wait_for_timeout(250)
             n=page.evaluate("window.witness.nonzero")
             page.wait_for_timeout(200)
             assert page.evaluate("window.witness.nonzero")==n
-            # Exhaust every occupancy mask and duration in actual page JS.
+            # Exhaust every occupancy mask and duration at the browser
+            # import seam. Native cursor exhaustiveness remains in test_scene_memory.c.
             checked=page.evaluate("""() => {
-                let frames=0;
+                let total=0;
                 for(let mask=1;mask<16;mask++)for(let seconds=1;seconds<=10;seconds++){
                     const bank=makeSceneBank(),cues=factoryCues(),slots=[];
                     for(let i=0;i<4;i++)if(mask&(1<<i)){bank.save(i,cues[i]);slots.push(i)}
                     const p=makeBankPerformance(bank,seconds);
                     bank.importText(JSON.stringify({format:'chronomorph-scenes',version:1,slots:[null,null,null,null]}));
-                    if(p.total!==slots.length*seconds*20)throw Error('duration');
-                    for(let i=0;i<p.total;i++){
-                        const frame=p.frame(),slot=slots[Math.floor(i/(seconds*20))];
-                        if(frame.slot!==slot||frame.first!==(i%(seconds*20)===0)||
-                            JSON.stringify(frame.controls)!==JSON.stringify(cues[slot]))throw Error('cue');
-                        frame.controls.patterns[0][1]=0;
-                        if(p.frame().controls.patterns[0][1]!==cues[slot].patterns[0][1])throw Error('mutable snapshot');
-                        if(p.accept()!==i+1)throw Error('cursor');
-                        frames++;
+                    if(p.total!==slots.length*seconds*20||p.seconds!==seconds||p.armed||p.count!==0)throw Error('duration');
+                    for(let i=0;i<4;i++){
+                        if(JSON.stringify(p.slots[i])!==JSON.stringify(mask&(1<<i)?cues[i]:null))
+                            throw Error('detached input');
                     }
-                    if(p.frame()!==null)throw Error('completion');
+                    total+=p.total;
                 }
-                return frames;
+                return total;
             }""")
             assert checked==35200
             # Performer-authored score: sparse slots, exact accepted duration,
@@ -260,12 +259,14 @@ with Server(("127.0.0.1",0),Handler) as s:
             assert page.evaluate("score!==null && score.total===80")
             page.wait_for_function("document.querySelector('#scoreStatus').textContent.startsWith('Score complete')",timeout=15000)
             page.wait_for_function("document.querySelector('#status').textContent.startsWith('Paused')")
-            frames=[q for q in requests if q["token"]==active_token and first<=q["seq"]<first+80]
+            frames=[(q,v) for q,v in requests if q["token"]==active_token and first<q["seq"]<=first+80]
             assert len(frames)==80
-            assert [q["seq"] for q in frames]==list(range(first,first+80))
-            for i,q in enumerate(frames):
-                assert q["playing"]==1
-                assert all(q[k]==v for k,v in custom[0 if i<40 else 2].items())
+            assert [q["seq"] for q,v in frames]==list(range(first+1,first+81))
+            for i,(q,v) in enumerate(frames):
+                assert set(q)=={"token","seq"} and v["playing"]==1
+                slot=0 if i<40 else 2
+                assert v["frame"]==dict(slot=slot,controls=custom[slot])
+                assert v["scene"]["total_remaining"]==79-i
             assert page.evaluate("window.witness.nonzero")>before_custom
             assert page.evaluate("token")==active_token
             assert page.evaluate("score===null && playing===0")
