@@ -73,6 +73,18 @@ jobs:
           name: chronomorph-lattice-variations-${{ runner.os }}
           path: instruments/chronomorph/lattice-evidence/
           if-no-files-found: error
+      - name: Performer-authored saved score and matched pattern control
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then lib=chronomorph-live.dll; else lib=chronomorph-live.so; fi
+          python scene_score.py "$lib" 'saved score evidence' --self-test
+          python -c "import json,pathlib; r=json.loads(pathlib.Path('saved score evidence/receipt.json').read_text()); a=r['arms']; assert r['slots']==[1,3] and r['frames']==120000 and r['changed_samples']==[0,45561]; assert a['saved-score']['wav_sha256']=='d29bad4a6b88ac4100416f38bd78c1f2b9e340f15d39399cf22a91cef3ab3ff8'; assert a['fixed-pattern-control']['wav_sha256']=='aa1e06456abd55149fdf4d412c165629803b84542bc57bedddd8b003acbfad4a'; assert a['saved-score']['trace_sha256']=='f0464e7daf0619eb0ed36095515bb6bb618c3c9a356e4d78a6cec66c4a0877ef'; assert a['fixed-pattern-control']['trace_sha256']=='c03227e781c5304e320513dd44aebfbb5f0776e019d7a3f39c7e82699f9d8961'"
+          cp scene_score.py 'saved score evidence/'
+          git rev-parse HEAD > 'saved score evidence/source-revision.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chronomorph-saved-score-${{ runner.os }}
+          path: instruments/chronomorph/saved score evidence/
+          if-no-files-found: error
       - name: Linux UBSan
         if: runner.os == 'Linux'
         run: |
