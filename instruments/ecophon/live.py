@@ -21,6 +21,11 @@ class Fixture:
         self.lib.ecof_panic.restype = None
         self.lib.ecof_step.argtypes = [C.c_uint]*4+[C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
         self.lib.ecof_step.restype = C.c_int
+        for fn in (self.lib.ecof_memory_capture,self.lib.ecof_memory_recall):
+            fn.argtypes = [C.c_uint]
+            fn.restype = C.c_int
+        self.lib.ecof_memory_step.argtypes = [C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
+        self.lib.ecof_memory_step.restype = C.c_int
         self.gen = 0
         self.active = False
 
@@ -40,7 +45,9 @@ class Fixture:
         spec = {"generation":(1,2**53-1)}
         if route == "/step":
             spec.update({"fertility":(0,255),"sharing":(0,255),"pressure":(0,255),"frozen":(0,1)})
-        elif route != "/panic":
+        elif route in ("/memory/capture","/memory/recall"):
+            spec["slot"] = (0,1)
+        elif route not in ("/panic","/memory/step"):
             raise ValueError("unknown command")
         fields(spec)
         if not self.active or d["generation"] != self.gen:
@@ -49,9 +56,18 @@ class Fixture:
             self.lib.ecof_panic()
             self.active = False
             return {"muted":True}
+        if route in ("/memory/capture","/memory/recall"):
+            fn = self.lib.ecof_memory_capture if route.endswith("capture") else self.lib.ecof_memory_recall
+            if not fn(d["slot"]):
+                raise RuntimeError("native memory rejected request")
+            return {"generation":self.gen,"slot":d["slot"],"accepted":True}
         pcm=(C.c_int16*FRAMES)()
         snap=(C.c_uint32*56)()
-        if self.lib.ecof_step(d["fertility"],d["sharing"],d["pressure"],d["frozen"],pcm,snap)!=56:
+        if route == "/memory/step":
+            count = self.lib.ecof_memory_step(pcm,snap)
+        else:
+            count = self.lib.ecof_step(d["fertility"],d["sharing"],d["pressure"],d["frozen"],pcm,snap)
+        if count!=56:
             raise RuntimeError("native fixture rejected request")
         v=list(snap)
         return {"generation":self.gen,"rate":24000,
