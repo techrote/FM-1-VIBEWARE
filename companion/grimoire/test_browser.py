@@ -72,6 +72,12 @@ def run(library, executable, screenshot):
                 # advance the same clock; verify the bright arc via played native XY.
                 page.locator('#ribbonShape').select_option('crown')
                 page.wait_for_function('held && ribbon.shape==="crown" && ribbon.blend===0 && played.gate===1 && played.y>=96 && played.y<=120 && played.localOrbit?.shape==="crown" && played.localOrbit.path[0][1]===96 && peak()>.02')
+                # Reverse the active orbit without resetting the held native gate.
+                page.locator('#ribbonDirection').select_option('-1')
+                page.wait_for_function('held && ribbon.direction===-1 && played.gate===1 && played.localOrbit?.direction===-1 && peak()>.02')
+                assert 'reverse' in page.locator('#orbitPlayed').inner_text()
+                page.locator('#ribbonDirection').select_option('1')
+                page.wait_for_function('held && ribbon.direction===1 && played.gate===1 && played.localOrbit?.direction===1 && peak()>.02')
                 page.locator('#ribbonShape').select_option('pendulum')
                 page.wait_for_function('held && ribbon.shape==="pendulum" && ribbon.blend===0 && played.gate===1 && played.y>=24 && played.y<=48 && played.localOrbit?.shape==="pendulum" && played.localOrbit.path[0][1]===24 && peak()>.02')
                 # Eight-point sketch, with explicit apply and continued gate.
@@ -115,6 +121,7 @@ def run(library, executable, screenshot):
                 assert page.locator('#holdGate').is_disabled()
                 assert page.locator('#orbitPlayed').inner_text() == 'Played local orbit: off'
                 assert page.locator('#ribbonSpeed').input_value()=='0'
+                assert page.locator('#ribbonDirection').input_value()=='1'
                 assert page.locator('#ribbonShape').input_value()=='ribbon'
                 assert page.evaluate('ribbon.sketch.length===8 && ribbon.speed===0 && !held')
                 gesture()
