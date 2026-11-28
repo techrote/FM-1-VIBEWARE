@@ -5,6 +5,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 from live import make_server
 from feedback import regulate
+from performance import BASE, ramp, controls
 
 # Insert a measurement tap into the real output graph, without replacing audio.
 TAP = """(() => {
@@ -88,13 +89,19 @@ with make_server(Path(sys.argv[1]),0) as server:
             # Record actual native step requests/responses without replacing the core.
             page.evaluate("""() => {
                 window.ecoWitness=[];
-                const original=post;
+                const original=post, originalControls=stepControls;
+                let arcBlock=null;
+                stepControls=()=>{
+                    arcBlock=cue?.id==="cueArc"?cue.block+1:null;
+                    return originalControls();
+                };
                 post=async(path,data)=>{
+                    const block=path==='/step'?arcBlock:null;
                     const result=await original(path,data);
                     if(path==='/step'){
                         window.ecoWitness.push({controls:[data.fertility,data.sharing,data.pressure,data.frozen],
-                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:[...result.controls,result.frozen],generation:result.generation});
-                        if(window.ecoWitness.length>32)window.ecoWitness.shift();
+                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:[...result.controls,result.frozen],generation:result.generation,arcBlock:block});
+                        if(window.ecoWitness.length>256)window.ecoWitness.shift();
                     }
                     return result;
                 };
@@ -160,10 +167,33 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.click("#start")
             page.wait_for_function("window.ecoRms()>0.001")
             assert not page.is_checked("#feedback")
+            # Whole-score performance starts from the actual current controls,
+            # matches the authored score after the entry ramp and never resets.
+            origin=tuple(page.evaluate("names.map(n=>+$(n).value)"))
+            page.evaluate("window.ecoWitness=[]")
+            page.click("#cueArc")
+            page.wait_for_function("window.ecoWitness.some(r=>r.arcBlock===240)",timeout=60000)
+            rows=page.evaluate("window.ecoWitness.filter(r=>r.arcBlock!==null)")
+            assert [r["arcBlock"] for r in rows]==list(range(1,241))
+            for i,row in enumerate(rows,1):
+                expected=(*ramp(origin,BASE,i,40),0) if i<=40 else controls(i-1,"habitat-arc")
+                assert row["controls"]==row["echo"]==list(expected),(i,row,expected)
+                assert row["generation"]==rows[0]["generation"]
+                assert row["ticks"]==rows[0]["ticks"]+(i-1)*10
+            assert "240/240 complete" in page.locator("#cueStatus").inner_text()
+            page.evaluate("window.ecoWitness=[]")
+            page.click("#cueArc")
+            page.wait_for_function("window.ecoWitness.some(r=>r.arcBlock===3)")
+            page.locator("#sharing").focus()
+            page.keyboard.press("Home")
+            assert "Manual" in page.locator("#cueStatus").inner_text()
+            page.wait_for_function("window.ecoWitness.slice(-2).length===2 && window.ecoWitness.slice(-2).every(r=>r.arcBlock===null && r.controls[1]===0)")
             page.click("#stop")
+            page.wait_for_function("window.ecoRms()<0.000001")
+            assert page.is_disabled("#cueArc")
             assert not errors,errors
             browser.close()
-            print("PASS Chromium native audio graph, XY gesture, regime reset, panic, fault, reconnect and actual-state population feedback/manual override")
+            print("PASS Chromium native audio graph, XY gesture, regime reset, panic, fault, reconnect and actual-state population feedback/manual override and whole Habitat Arc 240-block playback")
     finally:
         server.shutdown()
         worker.join()
