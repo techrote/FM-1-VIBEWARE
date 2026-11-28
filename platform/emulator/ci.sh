@@ -28,6 +28,13 @@ for cc in gcc clang; do
   "$cc" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -fno-sanitize-recover=all -O2 "$HERE/test_rate.c" -o "$TMP/rate"
   "$TMP/rate" | tee "$RES/rate-$cc.txt"
 done
+# Host-only fidelity witness; leave baseline and Windows receipt paths unchanged.
+if [[ "$MODE" == all || "$MODE" == rate ]]; then
+  for cc in gcc clang; do
+    "$cc" -std=c11 -Wall -Wextra -Werror -O2 -fsanitize=undefined -fno-sanitize-recover=all "$HERE/test_rate_response.c" -lm -o "$TMP/rate-response"
+    "$TMP/rate-response" | tee "$RES/rate-response-$cc.txt"
+  done
+fi
 python3 "$HERE/test_elf.py" 2>&1 | tee "$RES/elf-tests.txt"
 checkout https://github.com/zvenson/dinghy.git "$TMP/dinghy" "$DINGHY"
 checkout https://github.com/techrote/FM-1-MHAC.git "$TMP/mhac" "$MHAC"
