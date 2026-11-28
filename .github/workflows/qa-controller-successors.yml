@@ -1,0 +1,109 @@
+name: QA native controller successor packages
+on:
+  pull_request:
+    paths: ['.github/workflows/qa-controller-successors.yml','qualification/qa_imported_score.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  successor:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - instrument: chronomorph
+            os: ubuntu-24.04
+            pin: e57e0ca4ddc3070315a78d8835010b9488c3d176
+            artifact: 15256654422
+            digest: 5c79eee77b1f1f21ab91e81dfe48c9c7c4e16ed3b750cb2b69ee172017009c12
+          - instrument: chronomorph
+            os: windows-latest
+            pin: e57e0ca4ddc3070315a78d8835010b9488c3d176
+            artifact: 15257079145
+            digest: df06eeeae7ddbc47454b209213d2f17960ee1a84d4b64c723e63a2fa18b8202c
+          - instrument: ecophon
+            os: ubuntu-24.04
+            pin: eaf276c015fc81185076647762ddf1fd97aa7960
+            artifact: 15255539510
+            digest: 551b4c719d11247a07a812fe2e61ef71cb2f9cfc81caac2cb0d6a1bbfe11dbb8
+          - instrument: ecophon
+            os: windows-latest
+            pin: eaf276c015fc81185076647762ddf1fd97aa7960
+            artifact: 15256006594
+            digest: 51d547b3368998380b362b812ea371167bac528045d20ab158e47df4c4c4e6e1
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.pin }}
+          path: frozen
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exact original archive and independent native rebuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIN: ${{ matrix.pin }}
+          ARTIFACT: ${{ matrix.artifact }}
+          DIGEST: ${{ matrix.digest }}
+          INSTRUMENT: ${{ matrix.instrument }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen rev-parse HEAD)" = "$PIN"
+          mkdir -p receipts 'original package' 'fresh package'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > original.zip
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror -shared)
+          if [ "$RUNNER_OS" = Windows ]; then flags+=(-Wl,--export-all-symbols); else flags+=(-fPIC -fsanitize=undefined -fno-sanitize-recover=all); fi
+          c="frozen/instruments/$INSTRUMENT"
+          if [ "$INSTRUMENT" = chronomorph ]; then
+            python qualification/native_archive.py chronomorph frozen original.zip "$DIGEST" | tee receipts/native.log
+            python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract; extract(Path('original.zip'),Path('original package'),sys.argv[1])" "$DIGEST"
+            test "$(tr -d '\r\n' < 'original package/source-revision.txt')" = "$PIN"
+            if [ "$RUNNER_OS" = Windows ]; then lib=chronomorph-live.dll; else lib=chronomorph-live.so; fi
+            for f in chrono.c chrono.h live.py live.html live_bridge.c scene_memory.h test_scene_http.py browser_test.py; do cmp "original package/$f" "$c/$f"; done
+            cp "$c/live.py" "$c/live.html" 'fresh package/'
+            gcc "${flags[@]}" "$c/chrono.c" "$c/live_bridge.c" -o "fresh package/$lib"
+            python qualification/qa_imported_score.py 'original package' 'fresh package' "$lib" | tee receipts/imported-score.json
+          else
+            python qualification/ecophon_archive.py frozen original.zip "$DIGEST" --successor --live-arc | tee receipts/native.log
+            python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract,ECO_SUCCESSOR_FILES,ECO_ARC_FILES; extract(Path('original.zip'),Path('original package'),sys.argv[1],allowed_nested=ECO_SUCCESSOR_FILES+ECO_ARC_FILES)" "$DIGEST"
+            if [ "$RUNNER_OS" = Windows ]; then lib=ecof.dll; else lib=libecof.so; fi
+            for f in ecophon.c ecophon.h fixture.c environment_memory.h live.py live.html test_memory_http.py test_browser.py; do cmp "original package/$f" "$c/$f"; done
+            gcc "${flags[@]}" "$c/ecophon.c" "$c/fixture.c" -o "fresh package/$lib"
+            python "$c/test_memory_http.py" "fresh package/$lib" | tee receipts/fresh-memory.log
+            python 'original package/test_memory_http.py' "original package/$lib" | tee receipts/extracted-memory.log
+            cmp receipts/fresh-memory.log receipts/extracted-memory.log
+          fi
+          printf '%s\n' "$PIN" > receipts/source.txt
+          printf '%s %s\n' "$ARTIFACT" "$DIGEST" > receipts/artifact.txt
+          gcc --version > receipts/compiler.txt
+      - name: Actual extracted Linux package browser audio and control reproduction
+        if: runner.os == 'Linux'
+        env:
+          INSTRUMENT: ${{ matrix.instrument }}
+        run: |
+          set -euo pipefail
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+          cd 'original package'
+          if [ "$INSTRUMENT" = chronomorph ]; then
+            python browser_test.py chronomorph-live.so | tee ../receipts/browser.log
+          else
+            python test_browser.py libecof.so | tee ../receipts/browser.log
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-controller-successor-${{ matrix.instrument }}-${{ matrix.os }}
+          path: receipts/
+          if-no-files-found: error
