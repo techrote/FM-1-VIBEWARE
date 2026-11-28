@@ -93,7 +93,7 @@ with make_server(Path(sys.argv[1]),0) as server:
                     const result=await original(path,data);
                     if(path==='/step'){
                         window.ecoWitness.push({controls:[data.fertility,data.sharing,data.pressure,data.frozen],
-                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks});
+                            living:result.agents.reduce((n,a)=>n+(a.alive?1:0),0),ticks:result.ticks,echo:result.controls,generation:result.generation});
                         if(window.ecoWitness.length>32)window.ecoWitness.shift();
                     }
                     return result;
@@ -129,9 +129,33 @@ with make_server(Path(sys.argv[1]),0) as server:
             page.wait_for_function("window.ecoWitness.length>=2 && window.ecoWitness.slice(-2).every(r=>r.controls[3]===1)")
             page.uncheck("#frozen")
             assert not page.is_disabled("#feedback")
+            # Live score cues use the original Habitat Arc endpoints, not reset.
+            page.click("#cueBase")
+            page.wait_for_function("window.ecoWitness.slice(-2).length===2 && window.ecoWitness.slice(-2).every(r=>r.controls.join(',')==='180,200,40,0')")
+            page.evaluate("window.ecoWitness=[]")
+            page.click("#cueDrought")
+            page.wait_for_function("window.ecoWitness.some(r=>r.controls[0]<180 && r.controls[2]>40)")
+            first=page.evaluate("window.ecoWitness.filter(r=>r.controls[0]<180)[0]")
+            assert first["controls"]==[175,195,45,0],first
+            page.wait_for_function("window.ecoWitness.slice(-2).length===2 && window.ecoWitness.slice(-2).every(r=>r.controls.join(',')==='0,0,255,0')")
+            rows=page.evaluate("window.ecoWitness.slice()")
+            assert all(r["echo"]==r["controls"] and r["generation"]==first["generation"] for r in rows)
+            assert all(b["ticks"]==a["ticks"]+10 for a,b in zip(rows,rows[1:]))
+            assert rows[-1]["ticks"]>=first["ticks"]+390
+            page.click("#cueRecovery")
+            page.wait_for_function("window.ecoWitness.slice(-1)[0].controls[0]>0")
+            page.locator("#sharing").focus()
+            page.keyboard.press("End")
+            assert "Manual" in page.locator("#cueStatus").inner_text()
+            held=[int(page.input_value("#"+n)) for n in ("fertility","sharing","pressure")]+[0]
+            page.wait_for_function("v=>window.ecoWitness.slice(-2).length===2 && window.ecoWitness.slice(-2).every(r=>r.controls.join(',')===v.join(','))",arg=held)
+            page.click("#cueRecovery")
             page.check("#feedback")
-            page.click("#stop")
+            assert "Manual" in page.locator("#cueStatus").inner_text()
+            page.locator("#seed").focus()
+            page.keyboard.press("Escape")
             assert not page.is_checked("#feedback") and page.is_disabled("#feedback")
+            assert page.is_disabled("#cueRecovery")
             page.wait_for_function("window.ecoRms()<0.000001")
             page.click("#start")
             page.wait_for_function("window.ecoRms()>0.001")
