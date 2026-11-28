@@ -45,3 +45,16 @@ EXPORT int live_memory_block(unsigned op,unsigned value,int16_t *pcm,uint32_t *l
     render_block(pcm,levels);
     return 1;
 }
+
+/* Read actual local native patch: slot 0/1, or current engine patch (2). */
+EXPORT int live_memory_read(unsigned slot,uint32_t *out){
+    if(!out || slot>2u)return 0;
+    XenoMaterialPatch patch;
+    if(slot==2u)patch=(XenoMaterialPatch){engine.material,engine.excitation,engine.damping,engine.coupling};
+    else {
+        if(!(memory.valid & (1u<<slot)))return 0;
+        patch=memory.slot[slot];
+    }
+    out[0]=patch.material;out[1]=patch.excitation;out[2]=patch.damping;out[3]=patch.coupling;
+    return 1;
+}
