@@ -56,18 +56,19 @@ with make_server(sys.argv[1], 0) as server:
         comparisons = sounding = 0
         g = reset(0)
         memory(g, 'recall', 0, 409)  # initially empty
+        assert post('/reset', {'seed':42,'preset':0})['memory_slots']==[None,None]
         for preset in range(3):
             for takeover in (False, True):
                 g = reset(preset)
                 actual = [step(g,A)]
-                memory(g,'capture',0)
+                assert memory(g,'capture',0)['controls']==list(A)
                 actual.append(step(g,B))
-                memory(g,'capture',1)
-                memory(g,'recall',0)
+                assert memory(g,'capture',1)['controls']==list(B)
+                assert memory(g,'recall',0)['controls']==list(A)
                 expected = [A,B]
                 for n in range(1,46):
                     if n == 8:
-                        memory(g,'capture',0)  # detached target must not change
+                        assert memory(g,'capture',0)['controls']==list(mix(B,A,7))  # detached target must not change
                         memory(g-1,'recall',1,409)
                         memory(g,'capture',2,400)
                         post('/memory/step',dict(generation=g,slot=0),400)
@@ -86,7 +87,9 @@ with make_server(sys.argv[1], 0) as server:
                 post('/panic',dict(generation=g))
                 for action,slot in [('capture',0),('recall',0),('step',None)]:
                     memory(g,action,slot,409)
-                h = reset(preset)
+                reset_receipt=post('/reset', {'seed':42,'preset':preset})
+                assert reset_receipt['memory_slots']==[list(mix(B,A,7)),list(B)]
+                h=reset_receipt['generation']
                 for i,(got,controls) in enumerate(zip(actual,expected)):
                     want = step(h,controls,int(i>=len(expected)-2))
                     assert comparable(got)==comparable(want),(preset,takeover,i)
