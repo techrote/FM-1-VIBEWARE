@@ -27,6 +27,20 @@ class Engine:
         self.lib.live_block.argtypes=[C.c_uint,C.c_int,C.c_uint,C.c_uint,
             C.POINTER(C.c_uint32),C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
         self.lib.live_block.restype=C.c_int
+        self.lib.live_scene_capture.argtypes=[C.c_uint]
+        self.lib.live_scene_capture.restype=C.c_int
+        self.lib.live_scene_clear.argtypes=[]
+        self.lib.live_scene_clear.restype=None
+        self.lib.live_scene_mask.argtypes=[]
+        self.lib.live_scene_mask.restype=C.c_uint
+        self.lib.live_scene_recall.argtypes=[C.c_uint,C.c_uint,C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
+        self.lib.live_scene_recall.restype=C.c_int
+        self.lib.live_score_begin.argtypes=[C.c_uint]
+        self.lib.live_score_begin.restype=C.c_int
+        self.lib.live_score_position.argtypes=[C.POINTER(C.c_uint32)]
+        self.lib.live_score_position.restype=None
+        self.lib.live_score_block.argtypes=[C.POINTER(C.c_int16),C.POINTER(C.c_uint32)]
+        self.lib.live_score_block.restype=C.c_int
         self.token=None
         self.seq=0
         self.deadline=0
@@ -36,6 +50,44 @@ class Engine:
         if self.token is not None and time.monotonic()>=self.deadline:
             self.lib.live_stop()
             self.token=None
+
+    def scene_request(self,path,q):
+        extra={"/scene/capture":{"slot"},"/scene/clear":set(),
+               "/scene/recall":{"slot","playing"},"/score/begin":{"seconds"},"/score/block":set()}
+        if path not in extra or set(q)!={"token","seq"}|extra[path]:
+            raise ValueError("invalid scene request")
+        seq=integer(q["seq"],1,2147483647)
+        if seq!=self.seq+1:
+            raise PermissionError("out of order")
+        result={"seq":seq}
+        if path=="/scene/capture":
+            if not self.lib.live_scene_capture(integer(q["slot"],0,3)):
+                raise ValueError("capture rejected")
+        elif path=="/scene/clear":
+            self.lib.live_scene_clear()
+        elif path=="/score/begin":
+            if not self.lib.live_score_begin(integer(q["seconds"],1,10)):
+                raise ValueError("score rejected")
+        else:
+            pcm=(C.c_int16*FRAMES)()
+            snap=(C.c_uint32*15)()
+            if path=="/scene/recall":
+                playing=integer(q["playing"],0,1)
+                accepted=self.lib.live_scene_recall(integer(q["slot"],0,3),playing,pcm,snap)
+            else:
+                playing=1
+                accepted=self.lib.live_score_block(pcm,snap)
+            if not accepted:
+                raise ValueError("no scene or score block")
+            result.update(pcm=base64.b64encode(struct.pack("<1200h",*pcm)).decode("ascii"),
+                          lanes=[list(snap[i:i+5]) for i in range(0,15,5)],playing=playing)
+        pos=(C.c_uint32*2)()
+        self.lib.live_score_position(pos)
+        result["scene"]={"next_slot":int(pos[0]) if pos[1] else None,"remaining_blocks":int(pos[1]),
+                         "occupied_mask":int(self.lib.live_scene_mask())}
+        self.seq=seq
+        self.deadline=time.monotonic()+LEASE
+        return result
 
     def request(self,path,q):
         self.expire()
@@ -58,6 +110,8 @@ class Engine:
             self.lib.live_stop()
             self.token=None
             return {"stopped":True}
+        if path.startswith(("/scene/","/score/")):
+            return self.scene_request(path,q)
         if path!="/block" or set(q)!={"token","seq","bpm","warp","variation","playing","patterns"}:
             raise ValueError("invalid block")
         seq=integer(q["seq"],1,2147483647)
