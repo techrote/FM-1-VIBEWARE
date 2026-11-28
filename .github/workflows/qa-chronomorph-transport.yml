@@ -1,0 +1,83 @@
+name: QA Chronomorph transport seam
+on:
+  pull_request:
+    paths: ['.github/workflows/qa-chronomorph-transport.yml','qualification/qa_transport.c','qualification/native_archive.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  transport:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: 15259821107
+            digest: fb0b4063c26baa46b1801f080d344934ba2d523a39fff0c4d08c01c7119b5f84
+          - os: windows-latest
+            artifact: 15259113124
+            digest: 43d1d9c0b2e0952a35a17ccdcbc9820c7fa894bf2e578ab2e7b02e4de8d7aa28
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIN: 5fbc99d2c12055ea11aa8ab8f33ac62233a6499d
+      ARTIFACT: ${{ matrix.artifact }}
+      DIGEST: ${{ matrix.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PIN }}
+          path: frozen
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Original archive and independent transition table
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen rev-parse HEAD)" = "$PIN"
+          mkdir -p receipts 'original package'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT/zip" > original.zip
+          python qualification/native_archive.py chronomorph frozen original.zip "$DIGEST" | tee receipts/native.log
+          python -c "import sys; from pathlib import Path; sys.path.insert(0,'qualification'); from ecophon_archive import extract; extract(Path('original.zip'),Path('original package'),sys.argv[1])" "$DIGEST"
+          c=frozen/instruments/chronomorph
+          pkg='original package'
+          test "$(tr -d '\r\n' < "$pkg/source-revision.txt")" = "$PIN"
+          for f in chrono.c chrono.h scene_memory.h performance.h test_performance.c; do cmp "$pkg/$f" "$c/$f"; done
+          flags=(-std=c11 -O2 -Wall -Wextra -Werror)
+          if [ "$RUNNER_OS" != Windows ]; then flags+=(-fsanitize=undefined -fno-sanitize-recover=all); fi
+          gcc "${flags[@]}" -I"$c" "$c/chrono.c" qualification/qa_transport.c -o fresh.exe
+          ./fresh.exe | tee receipts/fresh.log
+          gcc "${flags[@]}" -I"$pkg" "$pkg/chrono.c" qualification/qa_transport.c -o "$pkg/qa-transport.exe"
+          (cd "$pkg" && ./qa-transport.exe) | tee receipts/extracted.log
+          cmp receipts/fresh.log receipts/extracted.log
+          grep -Fx 'QA transport: 13824 blocks, 6132 sounding, 7692 silent; reject/ignore/stop/panel/remote 7776/1179/3420/864/585; trace f6a2cd8d' receipts/fresh.log
+          gcc "${flags[@]}" "$c/chrono.c" "$c/test_performance.c" -o author.exe
+          ./author.exe | tee receipts/author.log
+          printf '%s\n' "$PIN" > receipts/source.txt
+          printf '%s %s\n' "$ARTIFACT" "$DIGEST" > receipts/artifact.txt
+          gcc --version > receipts/compiler.txt
+      - name: Actual extracted Linux browser
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+          cd 'original package'
+          python browser_test.py chronomorph-live.so | tee ../receipts/browser.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-chronomorph-transport-${{ matrix.os }}
+          path: receipts/
+          if-no-files-found: error
