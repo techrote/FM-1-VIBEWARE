@@ -206,6 +206,45 @@ with Server(("127.0.0.1",0),Handler) as s:
             n=page.evaluate("window.witness.nonzero")
             page.wait_for_timeout(200)
             assert page.evaluate("window.witness.nonzero")==n
+            # Performer-authored score: sparse slots, exact accepted duration,
+            # immutable cue snapshot despite edits/import while performing.
+            page.get_by_role("button",name="Start / resume",exact=True).click()
+            page.wait_for_function("playing===1")
+            custom=[dict(bpm=96,warp=15,variation=9,patterns=[[3,5],[8,129],[5,11]]),
+                    None,dict(bpm=173,warp=-47,variation=31,patterns=[[16,32769],[7,25],[4,9]]),None]
+            def import_bank(slots):
+                page.locator("#sceneExchange").fill(json.dumps(dict(format="chronomorph-scenes",version=1,slots=slots)))
+                page.get_by_role("button",name="Import scenes",exact=True).click()
+                assert page.locator("#sceneStatus").inner_text().startswith("Scene bank imported")
+            import_bank([None]*4)
+            page.locator("#cueSeconds").fill("1")
+            page.locator("#performBank").click()
+            assert "rejected" in page.locator("#scoreStatus").inner_text()
+            assert page.evaluate("score===null && playing===1")
+            import_bank(custom)
+            page.locator("#cueSeconds").fill("1.5")
+            page.locator("#performBank").click()
+            assert "rejected" in page.locator("#scoreStatus").inner_text()
+            page.locator("#cueSeconds").fill("1")
+            requests.clear()
+            first,active_token=page.evaluate("""() => {
+                document.querySelector('#performBank').click();return [seq+1,token]
+            }""")
+            page.wait_for_function("score!==null && score.count>=2")
+            import_bank([None]*4)
+            page.locator("#cueSeconds").fill("10")
+            page.wait_for_function("document.querySelector('#scoreStatus').textContent.startsWith('Score complete')",timeout=15000)
+            page.wait_for_function("document.querySelector('#status').textContent.startsWith('Paused')")
+            frames=[q for q in requests if q["token"]==active_token and first<=q["seq"]<first+40]
+            assert len(frames)==40
+            assert [q["seq"] for q in frames]==list(range(first,first+40))
+            for i,q in enumerate(frames):
+                assert q["playing"]==1
+                assert all(q[k]==v for k,v in custom[0 if i<20 else 2].items())
+            assert page.evaluate("token")==active_token
+            assert page.evaluate("score===null && playing===0")
+            page.get_by_role("button",name="Export scenes",exact=True).click()
+            assert json.loads(page.locator("#sceneExchange").input_value())["slots"]==[None]*4
             page.get_by_role("button",name="Panic / disconnect",exact=True).click()
             assert not errors,errors
             print("Chromium actual native PCM scheduling, visual clocks, live controls, pause/resume, panic and reconnect PASS",page.evaluate("window.witness"))
