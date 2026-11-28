@@ -114,6 +114,10 @@ with wave.open(sys.argv[1], 'rb') as a, wave.open(sys.argv[2], 'rb') as b:
     print(json.dumps(dict(baseline=sys.argv[1], intervention=sys.argv[2], prefix_frames=44100, post_start_frame=92610, post_frames=39690, changed_stereo_frames=sum(post_a[i:i+4]!=post_b[i:i+4] for i in range(0,len(post_a),4)))))
 PY
 }
+if [[ "$MODE" == rate-chrono ]]; then
+  source "$HERE/rate_chronomorph_probe.sh"
+  exit 0
+fi
 if [[ "$MODE" == rate-eco ]]; then
   source "$HERE/rate_ecophon_probe.sh"
   exit 0
